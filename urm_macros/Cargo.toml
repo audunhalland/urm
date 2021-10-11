@@ -1,0 +1,15 @@
+[package]
+name = "urm_macros"
+version = "0.1.0"
+authors = ["Audun Halland <audun.halldand@pm.me>"]
+edition = "2018"
+license = "MIT"
+description = "Macros"
+
+[dependencies]
+syn = { version = "1.0.75", features = ["full", "extra-traits"] }
+quote = "1.0.9"
+proc-macro2 = "1.0.24"
+
+[lib]
+proc-macro = true

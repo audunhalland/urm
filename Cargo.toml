@@ -1,0 +1,6 @@
+[workspace]
+
+members = [
+    "urm",
+    "urm_macros"
+]
