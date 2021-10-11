@@ -33,41 +33,14 @@ pub fn derive_table(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn relations(args: TokenStream, input: TokenStream) -> TokenStream {
-    let relations = syn::parse_macro_input!(input as table::ImplTable);
-
-    let ident = &relations.ident;
-
-    TokenStream::from(quote! {
-        impl ::urm::Relations for #ident {}
-    })
-}
-
-#[proc_macro_attribute]
 pub fn table(args: TokenStream, input: TokenStream) -> TokenStream {
     let name: syn::LitStr = syn::parse_macro_input!(args as syn::LitStr);
-
     let impl_table = syn::parse_macro_input!(input as table::ImplTable);
 
-    let ident = &impl_table.ident;
-
-    let methods = impl_table.methods.iter().map(|method| {
-        quote! {}
-    });
-
-    TokenStream::from(quote! {
-        impl #ident {
-            #(#methods)*
-        }
-
-        impl ::urm::Table for #ident {
-            fn name(&self) -> &'static str {
-                #name
-            }
-        }
-    })
+    TokenStream::from(table::gen_table(name, impl_table))
 }
 
+/// FIXME: Belongs in GraphQL crate
 #[proc_macro_attribute]
 #[allow(non_snake_case)]
 pub fn DbObject(args: TokenStream, input: TokenStream) -> TokenStream {

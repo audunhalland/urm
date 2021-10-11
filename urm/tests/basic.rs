@@ -14,56 +14,7 @@ pub mod sql {
         fn id() -> String;
 
         #[foreign(Edition(publication_id) => Self(id))]
-        fn editions() -> Vec<Edition>;
-    }
-
-    mod publication {
-        use super::*;
-        pub struct Id;
-        pub struct Editions;
-
-        impl field::FieldBase for Id {
-            fn name(&self) -> &'static str {
-                "id"
-            }
-
-            fn kind(&self) -> field::FieldKind {
-                field::FieldKind::Basic
-            }
-        }
-
-        impl field::Field for Id {
-            type Owner = Publication;
-            type Handler = field::BasicHandler<String>;
-        }
-
-        impl field::FieldBase for Editions {
-            fn name(&self) -> &'static str {
-                "editions"
-            }
-
-            fn kind(&self) -> field::FieldKind {
-                field::FieldKind::Foreign(field::ForeignField {
-                    foreign_table: &super::Edition,
-                })
-            }
-        }
-
-        impl field::Field for Editions {
-            type Owner = Publication;
-            type Handler = field::ForeignHandler<Edition>;
-        }
-    }
-
-    // hack (desugaring)
-    impl Publication {
-        pub fn id() -> publication::Id {
-            panic!()
-        }
-
-        pub fn editions(_: std::ops::Range<usize>) -> publication::Editions {
-            panic!()
-        }
+        fn editions(_: std::ops::Range<usize>) -> [Edition];
     }
 
     #[table("edition")]
@@ -83,6 +34,8 @@ pub struct Edition(Node<sql::Edition>);
 
 //#[DbObject]
 impl Publication {
+    /// Could do shorthand macro here:
+    /// #[project(sql::Publication::id)]
     pub async fn id(self) -> UrmResult<String> {
         let id = self.0.project(sql::Publication::id()).await?;
 
