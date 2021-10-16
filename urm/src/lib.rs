@@ -17,13 +17,14 @@ pub use urm_macros::*;
 
 mod engine;
 pub mod field;
+pub mod prelude;
 pub mod query;
+
+mod experiment;
 
 pub trait Table: Send + Sync + 'static {
     fn name(&self) -> &'static str;
 }
-
-pub trait Where<Q>: Table {}
 
 pub trait DbProxy {
     type Table;
@@ -55,16 +56,16 @@ pub trait Project<Inputs, Outputs> {
 }
 
 #[async_trait]
-impl<T, F> Project<F, <F::Handler as field::Handler>::Output> for Node<T>
+impl<T, F> Project<F, <F::Project as field::ProjectField>::Output> for Node<T>
 where
     T: Table,
     F: field::Field<Owner = T>,
 {
-    async fn project(self, field: F) -> UrmResult<<F::Handler as field::Handler>::Output> {
+    async fn project(self, field: F) -> UrmResult<<F::Project as field::ProjectField>::Output> {
         if let NodeState::Setup(setup) = self.state {
             {
                 let mut projection = setup.projection().lock();
-                <F::Handler as field::Handler>::project(&field, &mut projection);
+                <F::Project as field::ProjectField>::project(&field, &mut projection);
             }
             setup.complete().await?;
         }
@@ -77,8 +78,8 @@ impl<T, F0, F1>
     Project<
         (F0, F1),
         (
-            <F0::Handler as field::Handler>::Output,
-            <F1::Handler as field::Handler>::Output,
+            <F0::Project as field::ProjectField>::Output,
+            <F1::Project as field::ProjectField>::Output,
         ),
     > for Node<T>
 where
@@ -90,14 +91,14 @@ where
         self,
         fields: (F0, F1),
     ) -> UrmResult<(
-        <F0::Handler as field::Handler>::Output,
-        <F1::Handler as field::Handler>::Output,
+        <F0::Project as field::ProjectField>::Output,
+        <F1::Project as field::ProjectField>::Output,
     )> {
         if let NodeState::Setup(setup) = self.state {
             {
                 let mut projection = setup.projection().lock();
-                <F0::Handler as field::Handler>::project(&fields.0, &mut projection);
-                <F1::Handler as field::Handler>::project(&fields.1, &mut projection);
+                <F0::Project as field::ProjectField>::project(&fields.0, &mut projection);
+                <F1::Project as field::ProjectField>::project(&fields.1, &mut projection);
             }
             setup.complete().await?;
         }
@@ -127,34 +128,30 @@ mod test {
         }
     }
 
-    impl field::FieldBase for Id {
-        fn name(&self) -> &'static str {
+    impl field::Field for Id {
+        type Owner = Tab;
+        type Project = field::Scalar<String>;
+
+        fn name() -> &'static str {
             "id"
         }
 
-        fn kind(&self) -> field::FieldKind {
-            field::FieldKind::Basic
-        }
-    }
-
-    impl field::Field for Id {
-        type Owner = Tab;
-        type Handler = field::BasicHandler<String>;
-    }
-
-    impl field::FieldBase for Things {
-        fn name(&self) -> &'static str {
-            "things"
-        }
-
-        fn kind(&self) -> field::FieldKind {
-            field::FieldKind::Basic
+        fn local_id() -> field::LocalId {
+            field::LocalId(0)
         }
     }
 
     impl field::Field for Things {
         type Owner = Tab;
-        type Handler = field::ForeignHandler<Tab2>;
+        type Project = field::ForeignOneToMany<Tab2>;
+
+        fn name() -> &'static str {
+            "things"
+        }
+
+        fn local_id() -> field::LocalId {
+            field::LocalId(1)
+        }
     }
 
     impl Tab {

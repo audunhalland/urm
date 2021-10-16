@@ -25,7 +25,7 @@ impl syn::parse::Parse for ImplTable {
 
         let mut fields = Vec::new();
         while !content.is_empty() {
-            fields.push(field::Field::from(content.parse()?)?);
+            fields.push(field::Field::try_from(fields.len(), content.parse()?)?);
         }
 
         let ident = &path.segments.last().unwrap().ident;

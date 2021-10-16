@@ -13,6 +13,19 @@ pub trait ToQuery {
 }
 
 pub trait QueryBuilder {
-    fn push_select(&mut self);
-    fn pop_select(&mut self);
+    fn enter_select(&mut self);
+    fn exit_select(&mut self);
+}
+
+pub struct PGQueryBuilder;
+
+impl PGQueryBuilder {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl QueryBuilder for PGQueryBuilder {
+    fn enter_select(&mut self) {}
+    fn exit_select(&mut self) {}
 }

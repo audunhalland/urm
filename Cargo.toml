@@ -2,5 +2,6 @@
 
 members = [
     "urm",
-    "urm_macros"
+    "urm_macros",
+    "urm_graphql"
 ]

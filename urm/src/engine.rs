@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::Semaphore;
 
+use crate::field;
 use crate::query;
 use crate::{Table, UrmError, UrmResult};
 
@@ -48,6 +49,8 @@ impl QueryEngine {
         // Do this as many times as necessary:
         self.setup_done_rx.recv().await;
 
+        let mut builder = query::PGQueryBuilder::new();
+        self.root_select.build_query(&mut builder);
         // TODO Execute here
 
         // BUG: Add actual number of waiters
@@ -90,27 +93,36 @@ impl ProjectionSetup {
 /// # Select
 ///
 /// Encodes the intent of selecting *something* from a table.
+///
+/// It's an abstraction over an "SQL"-like select expression.
 struct Select {
+    /// TODO: we can have many FROMs in a select.
     from: &'static dyn Table,
-    predicate: Option<query::Predicate>,
 
-    /// The projection, which is getting built dynamically
+    /// The projection, which is getting built dynamically. Eh...
+    /// TODO: Does the projection contain all child "queries"?
+    /// not likely.
     projection: Arc<Mutex<Projection>>,
+
+    /// Where clause
+    predicate: Option<query::Predicate>,
 }
 
-impl query::ToQuery for Select {
-    fn to_query(&self, builder: &mut dyn query::QueryBuilder) {
-        builder.push_select();
-        builder.pop_select();
+impl Select {
+    fn build_query(&self, builder: &mut dyn query::QueryBuilder) {
+        builder.enter_select();
+        builder.exit_select();
     }
 }
 
 pub struct Projection {
-    fields: BTreeMap<&'static str, QueryField>,
+    fields: BTreeMap<field::LocalId, QueryField>,
 }
 
 impl Projection {
-    pub fn add_basic_field(&mut self) {}
+    pub fn project_basic_field(&mut self, local_id: field::LocalId) {
+        self.fields.insert(local_id, QueryField::Basic);
+    }
 }
 
 enum QueryField {

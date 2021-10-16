@@ -2,12 +2,12 @@ use proc_macro2::Span;
 use quote::*;
 use syn::spanned::Spanned;
 
-use crate::attr::{attr_util, foreign};
-
-use crate::attr::foreign::Foreign;
+use crate::attr::attr_util;
+use crate::attr::foreign;
 
 pub struct Field {
     pub span: proc_macro2::Span,
+    pub field_idx: usize,
     pub field_name: syn::LitStr,
     pub method_ident: syn::Ident,
     pub struct_ident: syn::Ident,
@@ -17,11 +17,11 @@ pub struct Field {
 }
 
 pub struct Meta {
-    pub foreign: Option<Foreign>,
+    pub foreign: Option<foreign::Foreign>,
 }
 
 impl Field {
-    pub fn from(method: syn::TraitItemMethod) -> Result<Self, syn::Error> {
+    pub fn try_from(field_idx: usize, method: syn::TraitItemMethod) -> Result<Self, syn::Error> {
         let span = method.span();
         let meta = meta_from_attrs(method.attrs)?;
 
@@ -43,6 +43,7 @@ impl Field {
 
         Ok(Field {
             span,
+            field_idx,
             field_name,
             method_ident: method.sig.ident,
             struct_ident,
@@ -101,34 +102,40 @@ pub fn gen_field_struct(
     impl_table: &crate::table::ImplTable,
 ) -> proc_macro2::TokenStream {
     let span = field.span;
+    let field_id = field.field_idx as u16;
     let field_name = &field.field_name;
     let struct_ident = &field.struct_ident;
     let output = &field.output;
 
     let table_path = &impl_table.path;
 
-    let handler = if let Some(_) = field.meta.foreign.as_ref() {
-        quote_spanned! {span=> ::urm::field::ForeignHandler<#output> }
-    } else {
-        quote_spanned! {span=> ::urm::field::BasicHandler<#output> }
+    let project = match field
+        .meta
+        .foreign
+        .as_ref()
+        .map(|foreign| &foreign.direction)
+    {
+        None => quote_spanned! {span=> Scalar },
+        Some(foreign::Direction::SelfReferencesForeign) => quote_spanned! {span=> ForeignOneToOne },
+        Some(foreign::Direction::ForeignReferencesSelf) => {
+            quote_spanned! {span=> ForeignOneToMany }
+        }
     };
 
     quote_spanned! {span=>
         pub struct #struct_ident;
 
-        impl ::urm::field::FieldBase for #struct_ident {
-            fn name(&self) -> &'static str {
+        impl ::urm::field::Field for #struct_ident {
+            type Owner = #table_path;
+            type Project = ::urm::field::#project<#output>;
+
+            fn name() -> &'static str {
                 #field_name
             }
 
-            fn kind(&self) -> ::urm::field::FieldKind {
-                unimplemented!("do not need this")
+            fn local_id() -> ::urm::field::LocalId {
+                ::urm::field::LocalId(#field_id)
             }
-        }
-
-        impl ::urm::field::Field for #struct_ident {
-            type Owner = #table_path;
-            type Handler = #handler;
         }
     }
 }
