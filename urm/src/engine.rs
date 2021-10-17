@@ -70,6 +70,25 @@ pub struct ProjectionSetup {
 }
 
 impl ProjectionSetup {
+    pub fn new(engine: Arc<Mutex<QueryEngine>>) -> Self {
+        let engine_lock = engine.lock();
+        let setup_done_tx = engine_lock.setup_done_tx.clone();
+        let query_done = engine_lock.query_done.clone();
+
+        query_done.add_permits(1);
+
+        Self {
+            projection: Arc::new(Mutex::new(Projection::new())),
+            query_engine: engine.clone(),
+            setup_done_tx,
+            query_done,
+        }
+    }
+
+    pub fn query_engine(&self) -> &Arc<Mutex<QueryEngine>> {
+        &self.query_engine
+    }
+
     pub fn projection(&self) -> &Arc<Mutex<Projection>> {
         &self.projection
     }

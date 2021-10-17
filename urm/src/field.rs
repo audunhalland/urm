@@ -2,7 +2,7 @@ use async_trait::*;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
-use crate::engine::Projection;
+use crate::engine::{Projection, QueryEngine};
 use crate::{Node, Table};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -19,19 +19,20 @@ pub trait Field: Sized + Send + Sync {
     /// Make a field probe-able by supplying a mapper
     /// function and probing context
     #[cfg(feature = "async_graphql")]
-    fn probe_with<'c, Func, Out>(
+    fn probe_with<'c, T, Func, Out>(
         &self,
         func: Func,
         ctx: &'c ::async_graphql::context::Context<'_>,
-    ) -> probe_shim::ProbeShim<'c, Self, Func, Self::Describe, Out>
+    ) -> probe_shim::ForeignProbeShim<'c, Self, T, Func, Self::Describe, Out>
     where
-        Self::Describe: QuantifyProbe<Out>,
+        T: Table,
+        Self::Describe: QuantifyProbe<Out> + DescribeField<Value = Node<T>>,
         Func: Fn(<Self::Describe as DescribeField>::Value) -> Out,
         Out: crate::Probe,
     {
         let mapping = ProbeMapping::new(func);
 
-        probe_shim::ProbeShim::new(mapping, ctx)
+        probe_shim::ForeignProbeShim::new(mapping, ctx)
     }
 }
 
@@ -44,7 +45,11 @@ pub trait DescribeField: Sized {
 /// Something that can be probe-projected directly
 #[async_trait]
 pub trait ProjectAndProbe: Field {
-    async fn project_and_probe(&self, projection: Arc<Mutex<crate::engine::Projection>>);
+    async fn project_and_probe(
+        &self,
+        engine: &Arc<Mutex<QueryEngine>>,
+        projection: Arc<Mutex<crate::engine::Projection>>,
+    );
 }
 
 pub trait QuantifyProbe<U>: DescribeField + Send + Sync + 'static {
@@ -52,7 +57,7 @@ pub trait QuantifyProbe<U>: DescribeField + Send + Sync + 'static {
 }
 
 pub struct Scalar<T> {
-    ph: std::marker::PhantomData<T>,
+    table: std::marker::PhantomData<T>,
 }
 
 impl<T> DescribeField for Scalar<T>
@@ -68,7 +73,11 @@ impl<F, T> ProjectAndProbe for F
 where
     F: Field<Describe = Scalar<T>>,
 {
-    async fn project_and_probe(&self, projection: Arc<Mutex<crate::engine::Projection>>) {
+    async fn project_and_probe(
+        &self,
+        engine: &Arc<Mutex<QueryEngine>>,
+        projection: Arc<Mutex<crate::engine::Projection>>,
+    ) {
         projection.lock().project_basic_field(F::local_id());
     }
 }
@@ -146,15 +155,24 @@ impl<T> Quantify<T> for Vector {
 pub mod probe_shim {
     use super::*;
 
-    pub struct ProbeShim<'c, F: Field, Func, DescIn: DescribeField, Out: crate::Probe> {
+    pub struct ForeignProbeShim<
+        'c,
+        F: Field,
+        T: Table,
+        Func,
+        DescIn: DescribeField,
+        Out: crate::Probe,
+    > {
         pub probe_mapping: ProbeMapping<Func, DescIn::Value, Out>,
         field: std::marker::PhantomData<F>,
+        table: std::marker::PhantomData<T>,
         ctx: &'c ::async_graphql::context::Context<'c>,
     }
 
-    impl<'c, F, Func, DescIn, Out> ProbeShim<'c, F, Func, DescIn, Out>
+    impl<'c, F, T, Func, DescIn, Out> ForeignProbeShim<'c, F, T, Func, DescIn, Out>
     where
         F: Field,
+        T: Table,
         DescIn: DescribeField,
         Out: crate::Probe,
     {
@@ -165,14 +183,16 @@ pub mod probe_shim {
             Self {
                 probe_mapping: probe_project,
                 field: std::marker::PhantomData,
+                table: std::marker::PhantomData,
                 ctx,
             }
         }
     }
 
-    impl<'c, F, Func, DescIn, Out> Field for ProbeShim<'c, F, Func, DescIn, Out>
+    impl<'c, F, T, Func, DescIn, Out> Field for ForeignProbeShim<'c, F, T, Func, DescIn, Out>
     where
         F: Field<Describe = DescIn>,
+        T: Table,
         Func: Send + Sync + 'static,
         DescIn: QuantifyProbe<Out>,
         Out: crate::Probe + Send + Sync + 'static,
@@ -190,18 +210,25 @@ pub mod probe_shim {
     }
 
     #[async_trait]
-    impl<'c, F, Func, DescIn, Out> ProjectAndProbe for ProbeShim<'c, F, Func, DescIn, Out>
+    impl<'c, F, T, Func, DescIn, Out> ProjectAndProbe for ForeignProbeShim<'c, F, T, Func, DescIn, Out>
     where
         F: Field<Describe = DescIn>,
+        T: Table,
         Func: (Fn(<DescIn as DescribeField>::Value) -> Out) + Send + Sync + 'static,
         DescIn: QuantifyProbe<Out>,
         Out: crate::Probe + Send + Sync + 'static,
     {
-        async fn project_and_probe(&self, projection: Arc<Mutex<crate::engine::Projection>>) {
+        async fn project_and_probe(
+            &self,
+            engine: &Arc<Mutex<QueryEngine>>,
+            projection: Arc<Mutex<crate::engine::Projection>>,
+        ) {
             let _sub_projection = Arc::new(Mutex::new(Projection::new()));
 
-            let mut proj_lock = projection.lock();
             // proj_lock.foreign_subselect(F::local_id(), sub_projection.clone());
+
+            let node = Node::<T>::setup(crate::engine::ProjectionSetup::new(engine.clone()));
+            //let probe = self.probe_mapping.0(node);
         }
     }
 }

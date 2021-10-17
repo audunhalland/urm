@@ -67,23 +67,35 @@ pub type UrmResult<T> = Result<T, UrmError>;
 /// which is publicly exposed.
 pub struct Node<T: Table> {
     state: NodeState,
-    ph: std::marker::PhantomData<T>,
+    table: std::marker::PhantomData<T>,
 }
 
 impl<T: Table> Node<T> {
+    pub fn setup(setup: engine::ProjectionSetup) -> Self {
+        Self {
+            state: NodeState::Setup(setup),
+            table: std::marker::PhantomData,
+        }
+    }
+
     pub fn clone_setup(&self) -> UrmResult<Self> {
         match &self.state {
             NodeState::Setup(setup) => Ok(Self {
                 state: NodeState::Setup(setup.fork()),
-                ph: std::marker::PhantomData,
+                table: std::marker::PhantomData,
             }),
             _ => Err(UrmError::Setup),
         }
     }
 
-    pub fn get_projection(&self) -> Arc<Mutex<engine::Projection>> {
+    pub fn get_setup(
+        &self,
+    ) -> (
+        Arc<Mutex<engine::QueryEngine>>,
+        Arc<Mutex<engine::Projection>>,
+    ) {
         match &self.state {
-            NodeState::Setup(setup) => setup.projection().clone(),
+            NodeState::Setup(setup) => (setup.query_engine().clone(), setup.projection().clone()),
             _ => panic!(),
         }
     }
@@ -109,10 +121,12 @@ where
         self,
         field: &'a F,
     ) -> UrmResult<<F::Describe as field::DescribeField>::Output> {
-        let projection = self.get_projection();
+        let (query_engine, projection) = self.get_setup();
 
         // TODO: parallelize:
-        field.project_and_probe(projection.clone()).await;
+        field
+            .project_and_probe(&query_engine, projection.clone())
+            .await;
 
         panic!();
     }
@@ -141,11 +155,17 @@ where
         <F0::Describe as field::DescribeField>::Output,
         <F1::Describe as field::DescribeField>::Output,
     )> {
-        let projection = self.get_projection();
+        let (query_engine, projection) = self.get_setup();
 
         // TODO: parallelize:
-        fields.0.project_and_probe(projection.clone()).await;
-        fields.1.project_and_probe(projection.clone()).await;
+        fields
+            .0
+            .project_and_probe(&query_engine, projection.clone())
+            .await;
+        fields
+            .1
+            .project_and_probe(&query_engine, projection.clone())
+            .await;
 
         panic!();
     }
