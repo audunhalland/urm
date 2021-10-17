@@ -27,13 +27,15 @@ pub trait Field: Sized + Send + Sync {
         Func: Fn(<Self::Describe as DescribeField>::Value) -> Out,
         Out: crate::Probe,
     {
-        probe_shim::ProbeShim::new(ProbeMapping::new(func), ctx)
+        let mapping = ProbeMapping::new(func);
+
+        probe_shim::ProbeShim::new(mapping, ctx)
     }
 }
 
 /// Field metadata
 pub trait DescribeField: Sized {
-    type Value;
+    type Value: Send + Sync + 'static;
     type Output;
 }
 
@@ -52,7 +54,10 @@ pub struct Scalar<T> {
     ph: std::marker::PhantomData<T>,
 }
 
-impl<T> DescribeField for Scalar<T> {
+impl<T> DescribeField for Scalar<T>
+where
+    T: Send + Sync + 'static,
+{
     type Value = T;
     type Output = T;
 }
@@ -99,7 +104,7 @@ pub struct ForeignField {
     pub foreign_table: &'static dyn Table,
 }
 
-pub struct ProbeMapping<Func, In: QuantifyProbe<Out>, Out>(
+pub struct ProbeMapping<Func, In, Out>(
     Func,
     std::marker::PhantomData<In>,
     std::marker::PhantomData<Out>,
@@ -107,7 +112,7 @@ pub struct ProbeMapping<Func, In: QuantifyProbe<Out>, Out>(
 
 impl<Func, In, Out> ProbeMapping<Func, In, Out>
 where
-    In: QuantifyProbe<Out>,
+    Func: Fn(In) -> Out,
 {
     fn new(func: Func) -> Self {
         Self(func, std::marker::PhantomData, std::marker::PhantomData)
@@ -117,6 +122,7 @@ where
 impl<Func, In, Out> DescribeField for ProbeMapping<Func, In, Out>
 where
     In: QuantifyProbe<Out>,
+    Out: Send + Sync + 'static,
 {
     type Value = Out;
     type Output = <In::Q as Quantify<Out>>::Output;
@@ -141,20 +147,20 @@ impl<T> Quantify<T> for Vector {
 pub mod probe_shim {
     use super::*;
 
-    pub struct ProbeShim<'c, F: Field, Func, In: QuantifyProbe<Out>, Out: crate::Probe> {
-        probe_mapping: ProbeMapping<Func, In, Out>,
+    pub struct ProbeShim<'c, F: Field, Func, DescIn: DescribeField, Out: crate::Probe> {
+        pub probe_mapping: ProbeMapping<Func, DescIn::Value, Out>,
         field: std::marker::PhantomData<F>,
         ctx: &'c ::async_graphql::context::Context<'c>,
     }
 
-    impl<'c, F, Func, In, Out> ProbeShim<'c, F, Func, In, Out>
+    impl<'c, F, Func, DescIn, Out> ProbeShim<'c, F, Func, DescIn, Out>
     where
         F: Field,
-        In: QuantifyProbe<Out>,
+        DescIn: DescribeField,
         Out: crate::Probe,
     {
         pub fn new(
-            probe_project: ProbeMapping<Func, In, Out>,
+            probe_project: ProbeMapping<Func, DescIn::Value, Out>,
             ctx: &'c ::async_graphql::context::Context<'c>,
         ) -> Self {
             Self {
@@ -165,11 +171,11 @@ pub mod probe_shim {
         }
     }
 
-    impl<'c, F, Func, In, Out> Field for ProbeShim<'c, F, Func, In, Out>
+    impl<'c, F, Func, DescIn, Out> Field for ProbeShim<'c, F, Func, DescIn, Out>
     where
-        F: Field<Describe = In>,
+        F: Field<Describe = DescIn>,
         Func: Send + Sync + 'static,
-        In: QuantifyProbe<Out>,
+        DescIn: QuantifyProbe<Out>,
         Out: crate::Probe + Send + Sync + 'static,
     {
         type Owner = F::Owner;
@@ -185,15 +191,16 @@ pub mod probe_shim {
     }
 
     #[async_trait]
-    impl<'c, F, Func, In, Out> ProjectAndProbe for ProbeShim<'c, F, Func, In, Out>
+    impl<'c, F, Func, DescIn, Out> ProjectAndProbe for ProbeShim<'c, F, Func, DescIn, Out>
     where
-        F: Field<Describe = In>,
-        Func: Send + Sync + 'static,
-        In: QuantifyProbe<Out>,
+        F: Field<Describe = DescIn>,
+        Func: (Fn(<DescIn as DescribeField>::Value) -> Out) + Send + Sync + 'static,
+        DescIn: QuantifyProbe<Out>,
         Out: crate::Probe + Send + Sync + 'static,
     {
         fn project(&self, projection: &mut Projection) {
-            projection.project_basic_field(F::local_id());
+            // Not basic :)
+            // projection.project_basic_field(F::local_id());
         }
 
         async fn probe(&self) {
