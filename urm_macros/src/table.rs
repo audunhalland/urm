@@ -68,6 +68,14 @@ pub fn gen_table(table_name: syn::LitStr, impl_table: ImplTable) -> proc_macro2:
         mod #mod_ident {
             use super::*;
 
+            static INSTANCE: #path = #path;
+
+            impl ::urm::Instance for #path {
+                fn instance() -> &'static Self {
+                    &#mod_ident::INSTANCE
+                }
+            }
+
             #(#field_structs)*
         }
     }

@@ -30,6 +30,10 @@ pub trait Table: Send + Sync + 'static {
     fn name(&self) -> &'static str;
 }
 
+pub trait Instance {
+    fn instance() -> &'static Self;
+}
+
 pub trait Probe {
     fn probe(&self, ctx: &::async_graphql::context::Context<'_>);
 }
@@ -85,6 +89,13 @@ impl<T: Table> Node<T> {
                 table: std::marker::PhantomData,
             }),
             _ => Err(UrmError::Setup),
+        }
+    }
+
+    pub fn get_projection(&self) -> Arc<Mutex<engine::Projection>> {
+        match &self.state {
+            NodeState::Setup(setup) => setup.projection().clone(),
+            _ => panic!(),
         }
     }
 

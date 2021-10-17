@@ -2,8 +2,8 @@ use async_trait::*;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
-use crate::engine::{Projection, QueryEngine};
-use crate::{Node, Table};
+use crate::engine::QueryEngine;
+use crate::{Instance, Node, Table};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct LocalId(pub u16);
@@ -153,6 +153,8 @@ impl<T> Quantify<T> for Vector {
 
 #[cfg(feature = "async_graphql")]
 pub mod probe_shim {
+    use crate::probe_select;
+
     use super::*;
 
     pub struct ForeignProbeShim<
@@ -213,9 +215,9 @@ pub mod probe_shim {
     impl<'c, F, T, Func, DescIn, Out> ProjectAndProbe for ForeignProbeShim<'c, F, T, Func, DescIn, Out>
     where
         F: Field<Describe = DescIn>,
-        T: Table,
+        T: Table + Instance,
         Func: (Fn(<DescIn as DescribeField>::Value) -> Out) + Send + Sync + 'static,
-        DescIn: QuantifyProbe<Out>,
+        DescIn: QuantifyProbe<Out> + DescribeField<Value = Node<T>>,
         Out: crate::Probe + Send + Sync + 'static,
     {
         async fn project_and_probe(
@@ -223,12 +225,19 @@ pub mod probe_shim {
             engine: &Arc<Mutex<QueryEngine>>,
             projection: Arc<Mutex<crate::engine::Projection>>,
         ) {
-            let _sub_projection = Arc::new(Mutex::new(Projection::new()));
+            let sub_node = Node::<T>::setup(crate::engine::ProjectionSetup::new(engine.clone()));
 
-            // proj_lock.foreign_subselect(F::local_id(), sub_projection.clone());
+            {
+                let mut proj_lock = projection.lock();
+                proj_lock.foreign_subselect(
+                    F::local_id(),
+                    T::instance(),
+                    sub_node.get_projection(),
+                );
+            }
 
-            let node = Node::<T>::setup(crate::engine::ProjectionSetup::new(engine.clone()));
-            //let probe = self.probe_mapping.0(node);
+            let sub_probe = self.probe_mapping.0(sub_node);
+            sub_probe.probe(self.ctx);
         }
     }
 }
