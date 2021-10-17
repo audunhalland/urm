@@ -15,6 +15,7 @@
 use async_trait::*;
 pub use urm_macros::*;
 
+pub mod agql;
 mod engine;
 pub mod field;
 pub mod prelude;
@@ -26,8 +27,29 @@ pub trait Table: Send + Sync + 'static {
     fn name(&self) -> &'static str;
 }
 
-pub trait DbProxy {
-    type Table;
+pub trait Probe {
+    #[cfg(feature = "async_graphql")]
+    fn probe(&self, ctx: &::async_graphql::context::Context<'_>);
+}
+
+pub struct ProbeSelect<T: Table> {
+    t: std::marker::PhantomData<T>,
+}
+
+impl<T: Table> ProbeSelect<T> {
+    pub async fn map<F, U>(&self, _func: F) -> UrmResult<Vec<U>>
+    where
+        F: Fn(Node<T>) -> U,
+    {
+        // TODO: The whole algorithm!!
+        panic!()
+    }
+}
+
+pub fn probe_select<T: Table>() -> ProbeSelect<T> {
+    ProbeSelect {
+        t: std::marker::PhantomData,
+    }
 }
 
 #[derive(Debug)]
@@ -45,6 +67,18 @@ pub struct Node<T: Table> {
     ph: std::marker::PhantomData<T>,
 }
 
+impl<T: Table> Node<T> {
+    pub fn clone_setup(&self) -> Result<Self, ()> {
+        match &self.state {
+            NodeState::Setup(setup) => Ok(Self {
+                state: NodeState::Setup(setup.fork()),
+                ph: std::marker::PhantomData,
+            }),
+            _ => Err(()),
+        }
+    }
+}
+
 enum NodeState {
     Setup(engine::ProjectionSetup),
     Ready,
@@ -52,20 +86,23 @@ enum NodeState {
 
 #[async_trait]
 pub trait Project<Inputs, Outputs> {
+    #[cfg(feature = "async_graphql")]
     async fn project(self, args: Inputs) -> UrmResult<Outputs>;
 }
 
 #[async_trait]
-impl<T, F> Project<F, <F::Project as field::ProjectField>::Output> for Node<T>
+impl<T, F> Project<F, <F::Describe as field::DescribeField>::Output> for Node<T>
 where
     T: Table,
-    F: field::Field<Owner = T>,
+    F: field::Field<Owner = T> + field::ProjectField,
 {
-    async fn project(self, field: F) -> UrmResult<<F::Project as field::ProjectField>::Output> {
+    #[cfg(feature = "async_graphql")]
+    async fn project(self, field: F) -> UrmResult<<F::Describe as field::DescribeField>::Output> {
         if let NodeState::Setup(setup) = self.state {
             {
                 let mut projection = setup.projection().lock();
-                <F::Project as field::ProjectField>::project(&field, &mut projection);
+                field.project(&mut projection);
+                // <F::Describe as field::ProjectField>::project(&field, &mut projection);
             }
             setup.complete().await?;
         }
@@ -78,100 +115,31 @@ impl<T, F0, F1>
     Project<
         (F0, F1),
         (
-            <F0::Project as field::ProjectField>::Output,
-            <F1::Project as field::ProjectField>::Output,
+            <F0::Describe as field::DescribeField>::Output,
+            <F1::Describe as field::DescribeField>::Output,
         ),
     > for Node<T>
 where
     T: Table,
-    F0: field::Field<Owner = T>,
-    F1: field::Field<Owner = T>,
+    F0: field::Field<Owner = T> + field::ProjectField,
+    F1: field::Field<Owner = T> + field::ProjectField,
 {
+    #[cfg(feature = "async_graphql")]
     async fn project(
         self,
         fields: (F0, F1),
     ) -> UrmResult<(
-        <F0::Project as field::ProjectField>::Output,
-        <F1::Project as field::ProjectField>::Output,
+        <F0::Describe as field::DescribeField>::Output,
+        <F1::Describe as field::DescribeField>::Output,
     )> {
         if let NodeState::Setup(setup) = self.state {
             {
                 let mut projection = setup.projection().lock();
-                <F0::Project as field::ProjectField>::project(&fields.0, &mut projection);
-                <F1::Project as field::ProjectField>::project(&fields.1, &mut projection);
+                fields.0.project(&mut projection);
+                fields.1.project(&mut projection);
             }
             setup.complete().await?;
         }
         panic!()
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    struct Tab;
-    struct Tab2;
-
-    struct Id;
-    struct Things;
-
-    impl Table for Tab {
-        fn name(&self) -> &'static str {
-            "tab"
-        }
-    }
-
-    impl Table for Tab2 {
-        fn name(&self) -> &'static str {
-            "tab2"
-        }
-    }
-
-    impl field::Field for Id {
-        type Owner = Tab;
-        type Project = field::Scalar<String>;
-
-        fn name() -> &'static str {
-            "id"
-        }
-
-        fn local_id() -> field::LocalId {
-            field::LocalId(0)
-        }
-    }
-
-    impl field::Field for Things {
-        type Owner = Tab;
-        type Project = field::ForeignOneToMany<Tab2>;
-
-        fn name() -> &'static str {
-            "things"
-        }
-
-        fn local_id() -> field::LocalId {
-            field::LocalId(1)
-        }
-    }
-
-    impl Tab {
-        fn id() -> Id {
-            Id
-        }
-
-        fn things() -> Things {
-            Things
-        }
-    }
-
-    #[test]
-    fn tup() {
-        let (engine, setup) = engine::QueryEngine::new_select(&Tab);
-        let node = Node {
-            state: NodeState::Setup(setup),
-            ph: std::marker::PhantomData,
-        };
-
-        let f = node.project((Tab::id(), Tab::things()));
     }
 }

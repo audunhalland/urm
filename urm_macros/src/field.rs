@@ -109,7 +109,7 @@ pub fn gen_field_struct(
 
     let table_path = &impl_table.path;
 
-    let project = match field
+    let describe = match field
         .meta
         .foreign
         .as_ref()
@@ -127,7 +127,7 @@ pub fn gen_field_struct(
 
         impl ::urm::field::Field for #struct_ident {
             type Owner = #table_path;
-            type Project = ::urm::field::#project<#output>;
+            type Describe = ::urm::field::#describe<#output>;
 
             fn name() -> &'static str {
                 #field_name

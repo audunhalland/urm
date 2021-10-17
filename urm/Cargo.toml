@@ -8,5 +8,10 @@ edition = "2021"
 [dependencies]
 urm_macros = { path = "../urm_macros", version = "0.1.0" }
 tokio = { version = "1", features = ["rt", "sync", "macros"] }
+async-graphql = { version = "2", optional = true }
 async-trait = "0.1"
 parking_lot = "0.11"
+
+[features]
+default = ["async_graphql"]
+async_graphql = ["async-graphql"]

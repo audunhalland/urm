@@ -16,7 +16,7 @@ pub struct QueryEngine {
 }
 
 impl QueryEngine {
-    pub fn new_select(from: &'static dyn Table) -> (Self, ProjectionSetup) {
+    pub fn new_select(from: &'static dyn Table) -> (Arc<Mutex<Self>>, ProjectionSetup) {
         let (setup_done_tx, setup_done_rx) = mpsc::channel(1);
         let query_done = Arc::new(Semaphore::new(0));
 
@@ -24,7 +24,7 @@ impl QueryEngine {
             fields: BTreeMap::new(),
         }));
 
-        let query_engine = Self {
+        let query_engine = Arc::new(Mutex::new(Self {
             root_select: Select {
                 from,
                 predicate: None,
@@ -33,12 +33,13 @@ impl QueryEngine {
             setup_done_rx,
             setup_done_tx: setup_done_tx.clone(),
             query_done: query_done.clone(),
-        };
+        }));
 
         (
-            query_engine,
+            query_engine.clone(),
             ProjectionSetup {
                 projection,
+                query_engine,
                 setup_done_tx,
                 query_done,
             },
@@ -65,6 +66,7 @@ impl QueryEngine {
 /// calling the `complete` method.
 pub struct ProjectionSetup {
     projection: Arc<Mutex<Projection>>,
+    query_engine: Arc<Mutex<QueryEngine>>,
     setup_done_tx: mpsc::Sender<()>,
     query_done: Arc<Semaphore>,
 }
@@ -72,6 +74,11 @@ pub struct ProjectionSetup {
 impl ProjectionSetup {
     pub fn projection(&self) -> &Arc<Mutex<Projection>> {
         &self.projection
+    }
+
+    pub fn fork(&self) -> Self {
+        // TODO: Register this fork in QueryEngine
+        panic!()
     }
 
     /// Consume this setup and wait for the result.

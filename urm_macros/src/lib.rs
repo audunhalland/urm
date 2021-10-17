@@ -46,8 +46,3 @@ pub fn table(args: TokenStream, input: TokenStream) -> TokenStream {
 pub fn DbObject(args: TokenStream, input: TokenStream) -> TokenStream {
     TokenStream::from(quote! {})
 }
-
-#[proc_macro_derive(DbProxy, attributes(for_table))]
-pub fn derive_db_object(input: TokenStream) -> TokenStream {
-    TokenStream::from(quote! {})
-}
