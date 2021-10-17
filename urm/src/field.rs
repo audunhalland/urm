@@ -3,14 +3,21 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 
 use crate::engine::QueryEngine;
-use crate::{Instance, Node, Table};
+use crate::{Instance, Node, Table, UrmResult};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct LocalId(pub u16);
 
+///
+/// A field having some data type, that can be found in some database.
+///
 pub trait Field: Sized + Send + Sync {
-    type Owner;
-    type Describe: DescribeField;
+    /// The table that owns this field
+    type Table;
+
+    /// The field 'mechanics', which determines how the field
+    /// behaves in the API
+    type Mechanics: FieldMechanics;
 
     fn name() -> &'static str;
 
@@ -23,95 +30,108 @@ pub trait Field: Sized + Send + Sync {
         &self,
         func: Func,
         ctx: &'c ::async_graphql::context::Context<'_>,
-    ) -> probe_shim::ForeignProbeShim<'c, Self, T, Func, Self::Describe, Out>
+    ) -> probe_shim::ForeignProbeShim<'c, Self, T, Func, Self::Mechanics, Out>
     where
         T: Table,
-        Self::Describe: QuantifyProbe<Out> + DescribeField<Value = Node<T>>,
-        Func: Fn(<Self::Describe as DescribeField>::Value) -> Out,
-        Out: crate::Probe,
+        Self::Mechanics: QuantifyProbe<Out> + FieldMechanics<Unit = Node<T>>,
+        Func: Fn(<Self::Mechanics as FieldMechanics>::Unit) -> Out,
+        Out: crate::probe::Probe,
     {
-        let mapping = ProbeMapping::new(func);
-
-        probe_shim::ForeignProbeShim::new(mapping, ctx)
+        probe_shim::ForeignProbeShim::new(ProbeMapping::new(func), ctx)
     }
 }
 
-/// Field metadata
-pub trait DescribeField: Sized {
-    type Value: Send + Sync + 'static;
+/// Field mechanics
+pub trait FieldMechanics: Sized {
+    /// Unit of this field type, in case Output is quantified
+    type Unit: Send + Sync + 'static;
+
+    /// Final, quantified value of the field (possibly Vec<Self::Unit>).
     type Output;
 }
 
 /// Something that can be probe-projected directly
+///
+/// FIXME: async trait here is a bit overkill, because there
+/// should only be two variants: "primitive" and "foreign". Use
+/// some kind of enum instead.
 #[async_trait]
 pub trait ProjectAndProbe: Field {
     async fn project_and_probe(
         &self,
         engine: &Arc<Mutex<QueryEngine>>,
         projection: Arc<Mutex<crate::engine::Projection>>,
-    );
+    ) -> UrmResult<()>;
 }
 
-pub trait QuantifyProbe<U>: DescribeField + Send + Sync + 'static {
-    type Q: Quantify<U>;
+/// Quantification of some unit value into quantified output
+/// for the probing process
+pub trait QuantifyProbe<U>: FieldMechanics + Send + Sync + 'static {
+    type Quantify: Quantify<U>;
 }
 
-pub struct Scalar<T> {
+///
+/// Primitive field type that is just a 'column',
+/// not a foreign reference.
+///
+pub struct Primitive<T> {
     table: std::marker::PhantomData<T>,
 }
 
-impl<T> DescribeField for Scalar<T>
+impl<V> FieldMechanics for Primitive<V>
 where
-    T: Send + Sync + 'static,
+    V: Send + Sync + 'static,
 {
-    type Value = T;
-    type Output = T;
+    type Unit = V;
+    type Output = V;
 }
 
 #[async_trait]
-impl<F, T> ProjectAndProbe for F
+impl<F, V> ProjectAndProbe for F
 where
-    F: Field<Describe = Scalar<T>>,
+    F: Field<Mechanics = Primitive<V>>,
 {
     async fn project_and_probe(
         &self,
-        engine: &Arc<Mutex<QueryEngine>>,
+        _engine: &Arc<Mutex<QueryEngine>>,
         projection: Arc<Mutex<crate::engine::Projection>>,
-    ) {
+    ) -> UrmResult<()> {
         projection.lock().project_basic_field(F::local_id());
+        Ok(())
     }
 }
 
+/// A 'foreign' reference field that points to
+/// at most one foreign entity
 pub struct ForeignOneToOne<T: Table> {
-    ph: std::marker::PhantomData<T>,
+    foreign: std::marker::PhantomData<T>,
 }
 
-impl<T: Table> DescribeField for ForeignOneToOne<T> {
-    type Value = Node<T>;
+impl<T: Table> FieldMechanics for ForeignOneToOne<T> {
+    type Unit = Node<T>;
     type Output = Node<T>;
 }
 
 impl<T: Table, U> QuantifyProbe<U> for ForeignOneToOne<T> {
-    type Q = Unit;
+    type Quantify = Unit;
 }
 
+/// A 'foreign' reference field that points to
+/// potentially many foreign entities.
 pub struct ForeignOneToMany<T: Table> {
-    ph: std::marker::PhantomData<T>,
+    foreign: std::marker::PhantomData<T>,
 }
 
-impl<T: Table> DescribeField for ForeignOneToMany<T> {
-    type Value = Node<T>;
+impl<T: Table> FieldMechanics for ForeignOneToMany<T> {
+    type Unit = Node<T>;
     type Output = Vec<Node<T>>;
 }
 
 impl<T: Table, U> QuantifyProbe<U> for ForeignOneToMany<T> {
-    type Q = Vector;
+    type Quantify = Vector;
 }
 
-pub struct ForeignField {
-    pub foreign_table: &'static dyn Table,
-}
-
+/// Function wrapper to map from some table node into Probe
 pub struct ProbeMapping<Func, In, Out>(
     Func,
     std::marker::PhantomData<In>,
@@ -127,34 +147,33 @@ where
     }
 }
 
-impl<Func, In, Out> DescribeField for ProbeMapping<Func, In, Out>
+impl<Func, In, Out> FieldMechanics for ProbeMapping<Func, In, Out>
 where
     In: QuantifyProbe<Out>,
     Out: Send + Sync + 'static,
 {
-    type Value = Out;
-    type Output = <In::Q as Quantify<Out>>::Output;
+    type Unit = Out;
+    type Output = <In::Quantify as Quantify<Out>>::Output;
+}
+
+/// Quantify some unit.
+pub trait Quantify<U> {
+    type Output;
 }
 
 pub struct Unit;
 pub struct Vector;
 
-pub trait Quantify<T> {
-    type Output;
+impl<U> Quantify<U> for Unit {
+    type Output = U;
 }
 
-impl<T> Quantify<T> for Unit {
-    type Output = T;
-}
-
-impl<T> Quantify<T> for Vector {
-    type Output = Vec<T>;
+impl<U> Quantify<U> for Vector {
+    type Output = Vec<U>;
 }
 
 #[cfg(feature = "async_graphql")]
 pub mod probe_shim {
-    use crate::probe_select;
-
     use super::*;
 
     pub struct ForeignProbeShim<
@@ -162,24 +181,24 @@ pub mod probe_shim {
         F: Field,
         T: Table,
         Func,
-        DescIn: DescribeField,
-        Out: crate::Probe,
+        InType: FieldMechanics,
+        Out: crate::probe::Probe,
     > {
-        pub probe_mapping: ProbeMapping<Func, DescIn::Value, Out>,
+        pub probe_mapping: ProbeMapping<Func, InType::Unit, Out>,
         field: std::marker::PhantomData<F>,
         table: std::marker::PhantomData<T>,
         ctx: &'c ::async_graphql::context::Context<'c>,
     }
 
-    impl<'c, F, T, Func, DescIn, Out> ForeignProbeShim<'c, F, T, Func, DescIn, Out>
+    impl<'c, F, T, Func, InType, Out> ForeignProbeShim<'c, F, T, Func, InType, Out>
     where
         F: Field,
         T: Table,
-        DescIn: DescribeField,
-        Out: crate::Probe,
+        InType: FieldMechanics,
+        Out: crate::probe::Probe,
     {
         pub fn new(
-            probe_project: ProbeMapping<Func, DescIn::Value, Out>,
+            probe_project: ProbeMapping<Func, InType::Unit, Out>,
             ctx: &'c ::async_graphql::context::Context<'c>,
         ) -> Self {
             Self {
@@ -191,16 +210,18 @@ pub mod probe_shim {
         }
     }
 
-    impl<'c, F, T, Func, DescIn, Out> Field for ForeignProbeShim<'c, F, T, Func, DescIn, Out>
+    impl<'c, F, T, Func, InType, Out> Field for ForeignProbeShim<'c, F, T, Func, InType, Out>
     where
-        F: Field<Describe = DescIn>,
+        F: Field<Mechanics = InType>,
         T: Table,
         Func: Send + Sync + 'static,
-        DescIn: QuantifyProbe<Out>,
-        Out: crate::Probe + Send + Sync + 'static,
+        InType: QuantifyProbe<Out>,
+        Out: crate::probe::Probe + Send + Sync + 'static,
     {
-        type Owner = F::Owner;
-        type Describe = ProbeMapping<Func, F::Describe, Out>;
+        // This is still the source table, not the target table (T)
+        type Table = F::Table;
+
+        type Mechanics = ProbeMapping<Func, F::Mechanics, Out>;
 
         fn name() -> &'static str {
             F::name()
@@ -212,20 +233,20 @@ pub mod probe_shim {
     }
 
     #[async_trait]
-    impl<'c, F, T, Func, DescIn, Out> ProjectAndProbe for ForeignProbeShim<'c, F, T, Func, DescIn, Out>
+    impl<'c, F, T, Func, InType, Out> ProjectAndProbe for ForeignProbeShim<'c, F, T, Func, InType, Out>
     where
-        F: Field<Describe = DescIn>,
+        F: Field<Mechanics = InType>,
         T: Table + Instance,
-        Func: (Fn(<DescIn as DescribeField>::Value) -> Out) + Send + Sync + 'static,
-        DescIn: QuantifyProbe<Out> + DescribeField<Value = Node<T>>,
-        Out: crate::Probe + Send + Sync + 'static,
+        Func: (Fn(<InType as FieldMechanics>::Unit) -> Out) + Send + Sync + 'static,
+        InType: QuantifyProbe<Out> + FieldMechanics<Unit = Node<T>>,
+        Out: crate::probe::Probe + async_graphql::OutputType + Send + Sync + 'static,
     {
         async fn project_and_probe(
             &self,
             engine: &Arc<Mutex<QueryEngine>>,
             projection: Arc<Mutex<crate::engine::Projection>>,
-        ) {
-            let sub_node = Node::<T>::setup(crate::engine::ProjectionSetup::new(engine.clone()));
+        ) -> UrmResult<()> {
+            let sub_node = Node::<T>::probe(crate::engine::ProbeNode::new(engine.clone()));
 
             {
                 let mut proj_lock = projection.lock();
@@ -237,7 +258,9 @@ pub mod probe_shim {
             }
 
             let sub_probe = self.probe_mapping.0(sub_node);
-            sub_probe.probe(self.ctx);
+            sub_probe.probe(self.ctx).await?;
+
+            Ok(())
         }
     }
 }
@@ -250,8 +273,8 @@ mod tests {
     struct MyField;
 
     impl Field for MyField {
-        type Owner = MyTable;
-        type Describe = Scalar<String>;
+        type Table = MyTable;
+        type Mechanics = Primitive<String>;
 
         fn name() -> &'static str {
             return "test";

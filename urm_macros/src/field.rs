@@ -109,13 +109,13 @@ pub fn gen_field_struct(
 
     let table_path = &impl_table.path;
 
-    let describe = match field
+    let mechanics = match field
         .meta
         .foreign
         .as_ref()
         .map(|foreign| &foreign.direction)
     {
-        None => quote_spanned! {span=> Scalar },
+        None => quote_spanned! {span=> Primitive },
         Some(foreign::Direction::SelfReferencesForeign) => quote_spanned! {span=> ForeignOneToOne },
         Some(foreign::Direction::ForeignReferencesSelf) => {
             quote_spanned! {span=> ForeignOneToMany }
@@ -126,8 +126,8 @@ pub fn gen_field_struct(
         pub struct #struct_ident;
 
         impl ::urm::field::Field for #struct_ident {
-            type Owner = #table_path;
-            type Describe = ::urm::field::#describe<#output>;
+            type Table = #table_path;
+            type Mechanics = ::urm::field::#mechanics<#output>;
 
             fn name() -> &'static str {
                 #field_name

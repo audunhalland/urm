@@ -18,10 +18,10 @@ use std::sync::Arc;
 
 pub use urm_macros::*;
 
-pub mod agql;
 mod engine;
 pub mod field;
 pub mod prelude;
+pub mod probe;
 pub mod query;
 
 mod experiment;
@@ -30,12 +30,9 @@ pub trait Table: Send + Sync + 'static {
     fn name(&self) -> &'static str;
 }
 
+/// Provide some &'static instance of a type
 pub trait Instance {
     fn instance() -> &'static Self;
-}
-
-pub trait Probe {
-    fn probe(&self, ctx: &::async_graphql::context::Context<'_>);
 }
 
 pub struct ProbeSelect<T: Table> {
@@ -60,7 +57,7 @@ pub fn probe_select<T: Table>() -> ProbeSelect<T> {
 
 #[derive(Debug)]
 pub enum UrmError {
-    Setup,
+    Probe,
     Pending,
     Synchronization,
 }
@@ -75,26 +72,27 @@ pub struct Node<T: Table> {
 }
 
 impl<T: Table> Node<T> {
-    pub fn setup(setup: engine::ProjectionSetup) -> Self {
+    pub fn probe(probe_node: engine::ProbeNode) -> Self {
         Self {
-            state: NodeState::Setup(setup),
+            state: NodeState::Probe(probe_node),
             table: std::marker::PhantomData,
         }
     }
 
-    pub fn clone_setup(&self) -> UrmResult<Self> {
+    /// Clone this node if it's in Probe state
+    pub fn clone_probe(&self) -> UrmResult<Self> {
         match &self.state {
-            NodeState::Setup(setup) => Ok(Self {
-                state: NodeState::Setup(setup.fork()),
+            NodeState::Probe(setup) => Ok(Self {
+                state: NodeState::Probe(setup.fork()),
                 table: std::marker::PhantomData,
             }),
-            _ => Err(UrmError::Setup),
+            _ => Err(UrmError::Probe),
         }
     }
 
     pub fn get_projection(&self) -> Arc<Mutex<engine::Projection>> {
         match &self.state {
-            NodeState::Setup(setup) => setup.projection().clone(),
+            NodeState::Probe(setup) => setup.projection().clone(),
             _ => panic!(),
         }
     }
@@ -106,14 +104,14 @@ impl<T: Table> Node<T> {
         Arc<Mutex<engine::Projection>>,
     ) {
         match &self.state {
-            NodeState::Setup(setup) => (setup.query_engine().clone(), setup.projection().clone()),
+            NodeState::Probe(setup) => (setup.query_engine().clone(), setup.projection().clone()),
             _ => panic!(),
         }
     }
 }
 
 enum NodeState {
-    Setup(engine::ProjectionSetup),
+    Probe(engine::ProbeNode),
     Ready,
 }
 
@@ -123,21 +121,21 @@ pub trait Project<'a, Inputs: 'a, Outputs> {
 }
 
 #[async_trait]
-impl<'a, T, F> Project<'a, F, <F::Describe as field::DescribeField>::Output> for Node<T>
+impl<'a, T, F> Project<'a, F, <F::Mechanics as field::FieldMechanics>::Output> for Node<T>
 where
     T: Table,
-    F: field::Field<Owner = T> + field::ProjectAndProbe + 'a,
+    F: field::Field<Table = T> + field::ProjectAndProbe + 'a,
 {
     async fn project(
         self,
         field: &'a F,
-    ) -> UrmResult<<F::Describe as field::DescribeField>::Output> {
+    ) -> UrmResult<<F::Mechanics as field::FieldMechanics>::Output> {
         let (query_engine, projection) = self.get_setup();
 
         // TODO: parallelize:
         field
             .project_and_probe(&query_engine, projection.clone())
-            .await;
+            .await?;
 
         panic!();
     }
@@ -150,21 +148,21 @@ impl<'a, T, F0, F1>
         'a,
         (F0, F1),
         (
-            <F0::Describe as field::DescribeField>::Output,
-            <F1::Describe as field::DescribeField>::Output,
+            <F0::Mechanics as field::FieldMechanics>::Output,
+            <F1::Mechanics as field::FieldMechanics>::Output,
         ),
     > for Node<T>
 where
     T: Table,
-    F0: field::Field<Owner = T> + field::ProjectAndProbe + 'a,
-    F1: field::Field<Owner = T> + field::ProjectAndProbe + 'a,
+    F0: field::Field<Table = T> + field::ProjectAndProbe + 'a,
+    F1: field::Field<Table = T> + field::ProjectAndProbe + 'a,
 {
     async fn project(
         self,
         fields: &'a (F0, F1),
     ) -> UrmResult<(
-        <F0::Describe as field::DescribeField>::Output,
-        <F1::Describe as field::DescribeField>::Output,
+        <F0::Mechanics as field::FieldMechanics>::Output,
+        <F1::Mechanics as field::FieldMechanics>::Output,
     )> {
         let (query_engine, projection) = self.get_setup();
 
@@ -172,11 +170,11 @@ where
         fields
             .0
             .project_and_probe(&query_engine, projection.clone())
-            .await;
+            .await?;
         fields
             .1
             .project_and_probe(&query_engine, projection.clone())
-            .await;
+            .await?;
 
         panic!();
     }

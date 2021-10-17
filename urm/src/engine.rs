@@ -16,7 +16,7 @@ pub struct QueryEngine {
 }
 
 impl QueryEngine {
-    pub fn new_select(from: &'static dyn Table) -> (Arc<Mutex<Self>>, ProjectionSetup) {
+    pub fn new_select(from: &'static dyn Table) -> (Arc<Mutex<Self>>, ProbeNode) {
         let (setup_done_tx, setup_done_rx) = mpsc::channel(1);
         let query_done = Arc::new(Semaphore::new(0));
         let projection = Arc::new(Mutex::new(Projection::new()));
@@ -34,7 +34,7 @@ impl QueryEngine {
 
         (
             query_engine.clone(),
-            ProjectionSetup {
+            ProbeNode {
                 projection,
                 query_engine,
                 setup_done_tx,
@@ -58,18 +58,18 @@ impl QueryEngine {
     }
 }
 
-/// Each ProjectionSetup the QueryEngine
+/// Each ProbeNode the QueryEngine
 /// hands out must be completed by
 /// calling the `complete` method.
 #[derive(Clone)]
-pub struct ProjectionSetup {
+pub struct ProbeNode {
     projection: Arc<Mutex<Projection>>,
     query_engine: Arc<Mutex<QueryEngine>>,
     setup_done_tx: mpsc::Sender<()>,
     query_done: Arc<Semaphore>,
 }
 
-impl ProjectionSetup {
+impl ProbeNode {
     pub fn new(engine: Arc<Mutex<QueryEngine>>) -> Self {
         let engine_lock = engine.lock();
         let setup_done_tx = engine_lock.setup_done_tx.clone();

@@ -70,12 +70,64 @@ impl Edition {
     }
 }
 
-mod gql_test_hack {
+// TODO: move to macro
+mod publication_gql_impls {
     use super::*;
+    use async_trait::*;
 
-    impl urm::Probe for Publication {
-        fn probe(&self, ctx: &::async_graphql::context::Context<'_>) {}
+    impl ::async_graphql::Type for Publication {
+        fn type_name() -> std::borrow::Cow<'static, str> {
+            panic!()
+        }
+
+        fn create_type_info(registry: &mut ::async_graphql::registry::Registry) -> String {
+            panic!()
+        }
     }
+
+    #[async_trait]
+    impl ::async_graphql::OutputType for Publication {
+        async fn resolve(
+            &self,
+            ctx: &::async_graphql::context::ContextSelectionSet<'_>,
+            _field: &::async_graphql::Positioned<::async_graphql::parser::types::Field>,
+        ) -> ::async_graphql::ServerResult<::async_graphql::Value> {
+            ::async_graphql::resolver_utils::resolve_container(ctx, self).await
+        }
+    }
+
+    #[async_trait]
+    impl ::async_graphql::resolver_utils::ContainerType for Publication {
+        async fn resolve_field(
+            &self,
+            ctx: &::async_graphql::context::Context<'_>,
+        ) -> ::async_graphql::ServerResult<Option<::async_graphql::Value>> {
+            let obj = Self(
+                self.0
+                    .clone_probe()
+                    .map_err(|_| ::async_graphql::ServerError::new("Bad state", None))?,
+            );
+
+            if ctx.item.node.name.node == "editions" {
+                let _ans = obj.editions(ctx, 0..1).await;
+            }
+
+            panic!()
+        }
+    }
+
+    #[async_trait]
+    impl urm::probe::Probe for Publication {
+        async fn probe(&self, ctx: &::async_graphql::context::Context<'_>) -> UrmResult<()> {
+            Ok(())
+        }
+    }
+}
+
+// TODO: move to macro
+mod edition_gql_impls {
+    use super::*;
+    use async_trait::*;
 
     impl ::async_graphql::Type for Edition {
         fn type_name() -> std::borrow::Cow<'static, str> {
@@ -87,7 +139,7 @@ mod gql_test_hack {
         }
     }
 
-    #[::async_trait::async_trait]
+    #[async_trait]
     impl ::async_graphql::OutputType for Edition {
         async fn resolve(
             &self,
@@ -99,7 +151,7 @@ mod gql_test_hack {
     }
 
     // test impl
-    #[::async_trait::async_trait]
+    #[async_trait]
     impl ::async_graphql::resolver_utils::ContainerType for Edition {
         async fn resolve_field(
             &self,
@@ -107,7 +159,7 @@ mod gql_test_hack {
         ) -> ::async_graphql::ServerResult<Option<::async_graphql::Value>> {
             let obj = Self(
                 self.0
-                    .clone_setup()
+                    .clone_probe()
                     .map_err(|_| ::async_graphql::ServerError::new("Bad state", None))?,
             );
 
@@ -119,8 +171,11 @@ mod gql_test_hack {
         }
     }
 
-    impl urm::Probe for Edition {
-        fn probe(&self, ctx: &::async_graphql::context::Context<'_>) {}
+    #[async_trait]
+    impl urm::probe::Probe for Edition {
+        async fn probe(&self, ctx: &::async_graphql::context::Context<'_>) -> UrmResult<()> {
+            Ok(())
+        }
     }
 }
 
