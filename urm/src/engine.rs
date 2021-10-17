@@ -19,10 +19,7 @@ impl QueryEngine {
     pub fn new_select(from: &'static dyn Table) -> (Arc<Mutex<Self>>, ProjectionSetup) {
         let (setup_done_tx, setup_done_rx) = mpsc::channel(1);
         let query_done = Arc::new(Semaphore::new(0));
-
-        let projection = Arc::new(Mutex::new(Projection {
-            fields: BTreeMap::new(),
-        }));
+        let projection = Arc::new(Mutex::new(Projection::new()));
 
         let query_engine = Arc::new(Mutex::new(Self {
             root_select: Select {
@@ -64,6 +61,7 @@ impl QueryEngine {
 /// Each ProjectionSetup the QueryEngine
 /// hands out must be completed by
 /// calling the `complete` method.
+#[derive(Clone)]
 pub struct ProjectionSetup {
     projection: Arc<Mutex<Projection>>,
     query_engine: Arc<Mutex<QueryEngine>>,
@@ -127,8 +125,30 @@ pub struct Projection {
 }
 
 impl Projection {
+    pub fn new() -> Self {
+        Self {
+            fields: BTreeMap::new(),
+        }
+    }
+
     pub fn project_basic_field(&mut self, local_id: field::LocalId) {
         self.fields.insert(local_id, QueryField::Basic);
+    }
+
+    pub fn foreign_subselect(
+        &mut self,
+        local_id: field::LocalId,
+        from: &'static dyn Table,
+        projection: Arc<Mutex<Projection>>,
+    ) {
+        self.fields.insert(
+            local_id,
+            QueryField::Foreign(Select {
+                projection,
+                from,
+                predicate: None,
+            }),
+        );
     }
 }
 

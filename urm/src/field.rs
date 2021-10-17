@@ -1,4 +1,6 @@
 use async_trait::*;
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 use crate::engine::Projection;
 use crate::{Node, Table};
@@ -42,8 +44,7 @@ pub trait DescribeField: Sized {
 /// Something that can be probe-projected directly
 #[async_trait]
 pub trait ProjectAndProbe: Field {
-    fn project(&self, projection: &mut Projection);
-    async fn probe<'a>(&'a self);
+    async fn project_and_probe(&self, projection: Arc<Mutex<crate::engine::Projection>>);
 }
 
 pub trait QuantifyProbe<U>: DescribeField + Send + Sync + 'static {
@@ -67,11 +68,9 @@ impl<F, T> ProjectAndProbe for F
 where
     F: Field<Describe = Scalar<T>>,
 {
-    fn project(&self, projection: &mut Projection) {
-        projection.project_basic_field(F::local_id());
+    async fn project_and_probe(&self, projection: Arc<Mutex<crate::engine::Projection>>) {
+        projection.lock().project_basic_field(F::local_id());
     }
-
-    async fn probe(&self) {}
 }
 
 pub struct ForeignOneToOne<T: Table> {
@@ -198,13 +197,11 @@ pub mod probe_shim {
         DescIn: QuantifyProbe<Out>,
         Out: crate::Probe + Send + Sync + 'static,
     {
-        fn project(&self, projection: &mut Projection) {
-            // Not basic :)
-            // projection.project_basic_field(F::local_id());
-        }
+        async fn project_and_probe(&self, projection: Arc<Mutex<crate::engine::Projection>>) {
+            let _sub_projection = Arc::new(Mutex::new(Projection::new()));
 
-        async fn probe(&self) {
-            // let next_probe = self.probe_mapping.0();
+            let mut proj_lock = projection.lock();
+            // proj_lock.foreign_subselect(F::local_id(), sub_projection.clone());
         }
     }
 }

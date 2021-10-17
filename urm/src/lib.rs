@@ -13,6 +13,9 @@
 //!
 
 use async_trait::*;
+use parking_lot::Mutex;
+use std::sync::Arc;
+
 pub use urm_macros::*;
 
 pub mod agql;
@@ -28,7 +31,6 @@ pub trait Table: Send + Sync + 'static {
 }
 
 pub trait Probe {
-    #[cfg(feature = "async_graphql")]
     fn probe(&self, ctx: &::async_graphql::context::Context<'_>);
 }
 
@@ -54,6 +56,7 @@ pub fn probe_select<T: Table>() -> ProbeSelect<T> {
 
 #[derive(Debug)]
 pub enum UrmError {
+    Setup,
     Pending,
     Synchronization,
 }
@@ -68,13 +71,20 @@ pub struct Node<T: Table> {
 }
 
 impl<T: Table> Node<T> {
-    pub fn clone_setup(&self) -> Result<Self, ()> {
+    pub fn clone_setup(&self) -> UrmResult<Self> {
         match &self.state {
             NodeState::Setup(setup) => Ok(Self {
                 state: NodeState::Setup(setup.fork()),
                 ph: std::marker::PhantomData,
             }),
-            _ => Err(()),
+            _ => Err(UrmError::Setup),
+        }
+    }
+
+    pub fn get_projection(&self) -> Arc<Mutex<engine::Projection>> {
+        match &self.state {
+            NodeState::Setup(setup) => setup.projection().clone(),
+            _ => panic!(),
         }
     }
 }
@@ -86,7 +96,6 @@ enum NodeState {
 
 #[async_trait]
 pub trait Project<'a, Inputs: 'a, Outputs> {
-    #[cfg(feature = "async_graphql")]
     async fn project(self, args: &'a Inputs) -> UrmResult<Outputs>;
 }
 
@@ -96,23 +105,20 @@ where
     T: Table,
     F: field::Field<Owner = T> + field::ProjectAndProbe + 'a,
 {
-    #[cfg(feature = "async_graphql")]
     async fn project(
         self,
         field: &'a F,
     ) -> UrmResult<<F::Describe as field::DescribeField>::Output> {
-        if let NodeState::Setup(setup) = self.state {
-            {
-                let mut projection = setup.projection().lock();
-                field.project(&mut projection);
-            }
-            field.probe().await;
-            setup.complete().await?;
-        }
-        panic!()
+        let projection = self.get_projection();
+
+        // TODO: parallelize:
+        field.project_and_probe(projection.clone()).await;
+
+        panic!();
     }
 }
 
+// TODO: macro to generate this impl for N-tuples
 #[async_trait]
 impl<'a, T, F0, F1>
     Project<
@@ -128,7 +134,6 @@ where
     F0: field::Field<Owner = T> + field::ProjectAndProbe + 'a,
     F1: field::Field<Owner = T> + field::ProjectAndProbe + 'a,
 {
-    #[cfg(feature = "async_graphql")]
     async fn project(
         self,
         fields: &'a (F0, F1),
@@ -136,18 +141,12 @@ where
         <F0::Describe as field::DescribeField>::Output,
         <F1::Describe as field::DescribeField>::Output,
     )> {
-        if let NodeState::Setup(setup) = self.state {
-            {
-                let mut projection = setup.projection().lock();
-                fields.0.project(&mut projection);
-                fields.1.project(&mut projection);
-            }
-            // TODO: parallelize
-            fields.0.probe().await;
-            fields.1.probe().await;
+        let projection = self.get_projection();
 
-            setup.complete().await?;
-        }
-        panic!()
+        // TODO: parallelize:
+        fields.0.project_and_probe(projection.clone()).await;
+        fields.1.project_and_probe(projection.clone()).await;
+
+        panic!();
     }
 }
