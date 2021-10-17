@@ -36,7 +36,7 @@ impl Publication {
     /// Could do shorthand macro here:
     /// #[project(sql::Publication::id)]
     pub async fn id(self, ctx: &::async_graphql::context::Context<'_>) -> UrmResult<String> {
-        self.0.project(db::Publication::id()).await
+        self.0.project(&db::Publication::id()).await
     }
 
     // A GraphQL query we want to resolve to SQL
@@ -47,9 +47,9 @@ impl Publication {
     ) -> UrmResult<Vec<Edition>> {
         let (_id, editions) = self
             .0
-            .project((
+            .project(&(
                 db::Publication::id(),
-                db::Publication::editions(range).probe_as(Edition, ctx),
+                db::Publication::editions(range).probe_with(Edition, ctx),
             ))
             .await?;
 
@@ -65,13 +65,17 @@ impl Edition {
     ) -> UrmResult<Publication> {
         Ok(self
             .0
-            .project(db::Edition::publication().probe_as(Publication, ctx))
+            .project(&db::Edition::publication().probe_with(Publication, ctx))
             .await?)
     }
 }
 
 mod gql_test_hack {
     use super::*;
+
+    impl urm::Probe for Publication {
+        fn probe(&self, ctx: &::async_graphql::context::Context<'_>) {}
+    }
 
     impl ::async_graphql::Type for Edition {
         fn type_name() -> std::borrow::Cow<'static, str> {
@@ -113,6 +117,10 @@ mod gql_test_hack {
 
             panic!()
         }
+    }
+
+    impl urm::Probe for Edition {
+        fn probe(&self, ctx: &::async_graphql::context::Context<'_>) {}
     }
 }
 
