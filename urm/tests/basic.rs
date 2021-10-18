@@ -27,16 +27,18 @@ pub mod db {
 
 /// This object might either be the "root",
 /// or it may be the child of an edition.
+#[derive(Probe)]
 pub struct Publication(Node<db::Publication>);
 
+#[derive(Probe)]
 pub struct Edition(Node<db::Edition>);
 
 #[async_graphql::Object]
 impl Publication {
     /// Could do shorthand macro here:
     /// #[project(sql::Publication::id)]
-    pub async fn id(&self, ctx: &::async_graphql::Context<'_>) -> UrmResult<String> {
-        self.0.project(&db::Publication::id()).await
+    pub async fn id(&self) -> UrmResult<String> {
+        urm::project(self, &db::Publication::id()).await
     }
 
     // A GraphQL query we want to resolve to SQL
@@ -46,14 +48,15 @@ impl Publication {
         first: Option<usize>,
         offset: Option<usize>,
     ) -> UrmResult<Vec<Edition>> {
-        let (_id, editions) = self
-            .0
-            .project(&(
+        let (_id, editions) = urm::project(
+            self,
+            &(
                 db::Publication::id(),
                 db::Publication::editions(offset.unwrap_or(0)..first.unwrap_or(20))
                     .probe_with(Edition, ctx),
-            ))
-            .await?;
+            ),
+        )
+        .await?;
 
         Ok(editions)
     }
@@ -62,10 +65,11 @@ impl Publication {
 #[async_graphql::Object]
 impl Edition {
     pub async fn publication(&self, ctx: &::async_graphql::Context<'_>) -> UrmResult<Publication> {
-        Ok(self
-            .0
-            .project(&db::Edition::publication().probe_with(Publication, ctx))
-            .await?)
+        urm::project(
+            self,
+            &db::Edition::publication().probe_with(Publication, ctx),
+        )
+        .await
     }
 }
 
@@ -76,14 +80,12 @@ pub struct Query;
 impl Query {
     // Root query, where the urm query gets 'initialized'
     pub async fn editions(&self, ctx: &::async_graphql::Context<'_>) -> UrmResult<Vec<Edition>> {
-        probe_select::<db::Edition>().map(Edition, ctx).await
+        select::<db::Edition>().probe_with(Edition, ctx).await
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use async_graphql::Response;
-
     use super::*;
 
     #[tokio::test]
@@ -96,15 +98,13 @@ mod tests {
 
         let response = schema
             .execute(
-                r#"
-            {
-                editions {
-                    publication {
-                        id
+                r#"{
+                    editions {
+                        publication {
+                            id
+                        }
                     }
-                }
-            }
-        "#,
+                }"#,
             )
             .await;
 

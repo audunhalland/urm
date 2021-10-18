@@ -101,7 +101,7 @@ impl Select {
 impl std::fmt::Debug for Select {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
         let lock = self.projection.lock();
-        write!(fmt, "SELECT {:?}", *lock)?;
+        write!(fmt, "SELECT From '{}' {:?}", self.from.name(), *lock)?;
         Ok(())
     }
 }

@@ -34,16 +34,20 @@ pub trait Instance {
     fn instance() -> &'static Self;
 }
 
-pub struct ProbeSelect<T: Table> {
+pub struct Select<T: Table> {
     t: std::marker::PhantomData<T>,
 }
 
-impl<T> ProbeSelect<T>
+impl<T> Select<T>
 where
     T: Table + Instance,
 {
     #[cfg(feature = "async_graphql")]
-    pub async fn map<F, U>(&self, func: F, ctx: &async_graphql::Context<'_>) -> UrmResult<Vec<U>>
+    pub async fn probe_with<F, U>(
+        &self,
+        func: F,
+        ctx: &async_graphql::Context<'_>,
+    ) -> UrmResult<Vec<U>>
     where
         F: Fn(Node<T>) -> U,
         U: async_graphql::ContainerType,
@@ -54,17 +58,17 @@ where
 
         let container = func(node);
 
-        probe::probe_container_field(&container, ctx);
+        probe::probe_container(&container, ctx);
 
         let query_engine = engine.query.clone();
-        let dbg = format!("{:?}", query_engine);
+        let dbg = format!("{:?}", query_engine.lock());
 
-        Err(UrmError::CannotSelect(dbg))
+        Err(UrmError::DebugSelect(dbg))
     }
 }
 
-pub fn probe_select<T: Table>() -> ProbeSelect<T> {
-    ProbeSelect {
+pub fn select<T: Table>() -> Select<T> {
+    Select {
         t: std::marker::PhantomData,
     }
 }
@@ -74,8 +78,11 @@ pub enum UrmError {
     #[error("Probe error")]
     Probe,
 
-    #[error("Cannot select {0}")]
-    CannotSelect(String),
+    #[error("Deserialization error")]
+    Deserialization,
+
+    #[error("Debug select: {0}")]
+    DebugSelect(String),
 }
 
 pub type UrmResult<T> = Result<T, UrmError>;
@@ -98,72 +105,73 @@ impl<T: Table> Node<T> {
 
 enum NodeKind {
     Probe(engine::Probing),
-    FetchResult,
+    Deserialize,
 }
 
-#[async_trait]
-pub trait Project<'a, Inputs: 'a, Outputs> {
-    async fn project(&self, args: &'a Inputs) -> UrmResult<Outputs>;
-}
-
-#[async_trait]
-impl<'a, T, F> Project<'a, F, <F::Mechanics as field::FieldMechanics>::Output> for Node<T>
+///
+/// # Project
+///
+pub async fn project<T, P, M>(probe: &P, arg: &M) -> UrmResult<M::Output>
 where
     T: Table,
-    F: field::Field<Table = T> + field::ProjectAndProbe + 'a,
+    P: Probe<Table = T>,
+    M: MapProject<T>,
 {
-    async fn project(
-        &self,
-        field: &'a F,
-    ) -> UrmResult<<F::Mechanics as field::FieldMechanics>::Output> {
-        match &self.kind {
+    arg.map_project(probe.node()).await
+}
+
+pub trait Probe {
+    type Table: Table;
+
+    fn node(&self) -> &Node<Self::Table>;
+}
+
+#[async_trait]
+pub trait MapProject<T: Table> {
+    type Output;
+
+    async fn map_project(&self, node: &Node<T>) -> UrmResult<Self::Output>;
+}
+
+#[async_trait]
+impl<T, F> MapProject<T> for F
+where
+    T: Table,
+    F: field::Field<Table = T> + field::ProjectAndProbe,
+{
+    type Output = <F::Mechanics as field::FieldMechanics>::Output;
+
+    async fn map_project(&self, node: &Node<T>) -> UrmResult<Self::Output> {
+        match &node.kind {
             NodeKind::Probe(probing) => {
-                field.project_and_probe(probing.engine(), probing.projection())?;
+                self.project_and_probe(probing)?;
                 never::never().await
             }
-            NodeKind::FetchResult => {
-                panic!();
-            }
+            NodeKind::Deserialize => Err(UrmError::Deserialization),
         }
     }
 }
 
-// TODO: macro to generate this impl for N-tuples
 #[async_trait]
-impl<'a, T, F0, F1>
-    Project<
-        'a,
-        (F0, F1),
-        (
-            <F0::Mechanics as field::FieldMechanics>::Output,
-            <F1::Mechanics as field::FieldMechanics>::Output,
-        ),
-    > for Node<T>
+impl<T, F0, F1> MapProject<T> for (F0, F1)
 where
     T: Table,
-    F0: field::Field<Table = T> + field::ProjectAndProbe + 'a,
-    F1: field::Field<Table = T> + field::ProjectAndProbe + 'a,
+    F0: field::Field<Table = T> + field::ProjectAndProbe,
+    F1: field::Field<Table = T> + field::ProjectAndProbe,
 {
-    async fn project(
-        &self,
-        fields: &'a (F0, F1),
-    ) -> UrmResult<(
+    type Output = (
         <F0::Mechanics as field::FieldMechanics>::Output,
         <F1::Mechanics as field::FieldMechanics>::Output,
-    )> {
-        match &self.kind {
+    );
+
+    async fn map_project(&self, node: &Node<T>) -> UrmResult<Self::Output> {
+        match &node.kind {
             NodeKind::Probe(probing) => {
-                fields
-                    .0
-                    .project_and_probe(probing.engine(), &probing.projection())?;
-                fields
-                    .1
-                    .project_and_probe(probing.engine(), probing.projection())?;
+                self.0.project_and_probe(probing)?;
+                self.1.project_and_probe(probing)?;
                 never::never().await
             }
-            NodeKind::FetchResult => {
-                panic!();
-            }
+            NodeKind::Deserialize => Err(UrmError::Deserialization),
         }
     }
 }

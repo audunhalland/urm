@@ -1,7 +1,7 @@
 use parking_lot::Mutex;
 use std::sync::Arc;
 
-use crate::engine::Engine;
+use crate::engine::{Engine, Probing};
 use crate::{Instance, Node, Table, UrmResult};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -51,11 +51,7 @@ pub trait FieldMechanics: Sized {
 
 /// Something that can be probe-projected directly
 pub trait ProjectAndProbe: Field {
-    fn project_and_probe(
-        &self,
-        engine: &Engine,
-        projection: &Arc<Mutex<crate::engine::Projection>>,
-    ) -> UrmResult<()>;
+    fn project_and_probe(&self, probing: &Probing) -> UrmResult<()>;
 }
 
 /// Quantification of some unit value into quantified output
@@ -84,12 +80,11 @@ impl<F, V> ProjectAndProbe for F
 where
     F: Field<Mechanics = Primitive<V>>,
 {
-    fn project_and_probe(
-        &self,
-        _engine: &Engine,
-        projection: &Arc<Mutex<crate::engine::Projection>>,
-    ) -> UrmResult<()> {
-        projection.lock().project_primitive_field(F::local_id());
+    fn project_and_probe(&self, probing: &Probing) -> UrmResult<()> {
+        probing
+            .projection()
+            .lock()
+            .project_primitive_field(F::local_id());
         Ok(())
     }
 }
@@ -236,23 +231,19 @@ pub mod probe_shim {
         <<InType as QuantifyProbe<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
         Out: async_graphql::ContainerType + async_graphql::OutputType + Send + Sync + 'static,
     {
-        fn project_and_probe(
-            &self,
-            engine: &Engine,
-            projection: &Arc<Mutex<crate::engine::Projection>>,
-        ) -> UrmResult<()> {
-            let sub_probing = crate::engine::Probing::new(engine.clone());
+        fn project_and_probe(&self, probing: &Probing) -> UrmResult<()> {
+            let sub_probing = crate::engine::Probing::new(probing.engine().clone());
             let sub_projection = sub_probing.projection().clone();
             let sub_node = Node::<T>::new_probe(sub_probing);
 
             {
-                let mut proj_lock = projection.lock();
+                let mut proj_lock = probing.projection().lock();
                 proj_lock.foreign_subselect(F::local_id(), T::instance(), sub_projection);
             }
 
             let sub_probe = self.probe_mapping.0(sub_node);
 
-            crate::probe::probe_container_field(&sub_probe, self.ctx);
+            crate::probe::probe_container(&sub_probe, self.ctx);
 
             Ok(())
         }

@@ -16,7 +16,7 @@ pub trait Probe: async_graphql::ContainerType {
 }
 */
 
-pub fn probe_container_field<T: async_graphql::ContainerType>(
+pub fn probe_container<T: async_graphql::ContainerType>(
     container: &T,
     ctx: &async_graphql::context::Context<'_>,
 ) {

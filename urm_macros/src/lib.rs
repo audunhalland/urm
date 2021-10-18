@@ -2,7 +2,7 @@
 
 extern crate proc_macro;
 
-mod derive_table;
+mod derive_probe;
 mod field;
 mod table;
 
@@ -14,24 +14,6 @@ mod attr {
 use proc_macro::TokenStream;
 use quote::quote;
 
-#[proc_macro_derive(Table, attributes(table_name, id, relation))]
-pub fn derive_table(input: TokenStream) -> TokenStream {
-    let table_struct = syn::parse_macro_input!(input as derive_table::TableStruct);
-
-    let ident = &table_struct.item.ident;
-    let name = &table_struct.name.0;
-
-    let tokens = quote! {
-        impl ::urm::Table for #ident {
-            fn name(&self) -> &'static str {
-                #name
-            }
-        }
-    };
-
-    TokenStream::from(tokens)
-}
-
 #[proc_macro_attribute]
 pub fn table(args: TokenStream, input: TokenStream) -> TokenStream {
     let name: syn::LitStr = syn::parse_macro_input!(args as syn::LitStr);
@@ -40,9 +22,22 @@ pub fn table(args: TokenStream, input: TokenStream) -> TokenStream {
     TokenStream::from(table::gen_table(name, impl_table))
 }
 
-/// FIXME: Belongs in GraphQL crate
-#[proc_macro_attribute]
-#[allow(non_snake_case)]
-pub fn DbObject(args: TokenStream, input: TokenStream) -> TokenStream {
-    TokenStream::from(quote! {})
+#[proc_macro_derive(Probe, attributes())]
+pub fn derive_probe(input: TokenStream) -> TokenStream {
+    let probe_struct = syn::parse_macro_input!(input as derive_probe::ProbeStruct);
+
+    let ident = &probe_struct.item.ident;
+    let table_ty = &probe_struct.table_ty;
+
+    let tokens = quote! {
+        impl ::urm::Probe for #ident {
+            type Table = #table_ty;
+
+            fn node(&self) -> &::urm::Node<Self::Table> {
+                &self.0
+            }
+        }
+    };
+
+    TokenStream::from(tokens)
 }
