@@ -1,116 +1,74 @@
 use parking_lot::Mutex;
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use tokio::sync::mpsc;
-use tokio::sync::Semaphore;
 
 use crate::field;
 use crate::query;
-use crate::{Table, UrmError, UrmResult};
+use crate::{Table, UrmResult};
 
-pub struct QueryEngine {
-    root_select: Select,
-    setup_done_rx: mpsc::Receiver<()>,
-    setup_done_tx: mpsc::Sender<()>,
-    query_done: Arc<Semaphore>,
+#[derive(Clone)]
+pub struct Engine {
+    pub query: Arc<Mutex<QueryEngine>>,
 }
 
-impl QueryEngine {
-    pub fn new_select(from: &'static dyn Table) -> (Arc<Mutex<Self>>, ProbeNode) {
-        let (setup_done_tx, setup_done_rx) = mpsc::channel(1);
-        let query_done = Arc::new(Semaphore::new(0));
+impl Engine {
+    pub fn new_select(from: &'static dyn Table) -> (Self, Probing) {
         let projection = Arc::new(Mutex::new(Projection::new()));
 
-        let query_engine = Arc::new(Mutex::new(Self {
+        let query_engine = Arc::new(Mutex::new(QueryEngine {
             root_select: Select {
                 from,
                 predicate: None,
                 projection: projection.clone(),
             },
-            setup_done_rx,
-            setup_done_tx: setup_done_tx.clone(),
-            query_done: query_done.clone(),
         }));
 
-        (
-            query_engine.clone(),
-            ProbeNode {
-                projection,
-                query_engine,
-                setup_done_tx,
-                query_done,
-            },
-        )
+        let engine = Self {
+            query: query_engine.clone(),
+        };
+
+        (engine.clone(), Probing { projection, engine })
     }
+}
 
-    pub async fn execute(mut self) -> UrmResult<()> {
-        // Do this as many times as necessary:
-        self.setup_done_rx.recv().await;
+#[derive(Debug)]
+pub struct QueryEngine {
+    root_select: Select,
+}
 
+impl QueryEngine {
+    pub async fn execute(self) -> UrmResult<()> {
         let mut builder = query::PGQueryBuilder::new();
         self.root_select.build_query(&mut builder);
         // TODO Execute here
-
-        // BUG: Add actual number of waiters
-        self.query_done.add_permits(999999999);
 
         panic!();
     }
 }
 
-/// Each ProbeNode the QueryEngine
+/// Each Probing the QueryEngine
 /// hands out must be completed by
 /// calling the `complete` method.
 #[derive(Clone)]
-pub struct ProbeNode {
+pub struct Probing {
     projection: Arc<Mutex<Projection>>,
-    query_engine: Arc<Mutex<QueryEngine>>,
-    setup_done_tx: mpsc::Sender<()>,
-    query_done: Arc<Semaphore>,
+    engine: Engine,
 }
 
-impl ProbeNode {
-    pub fn new(engine: Arc<Mutex<QueryEngine>>) -> Self {
-        let engine_lock = engine.lock();
-        let setup_done_tx = engine_lock.setup_done_tx.clone();
-        let query_done = engine_lock.query_done.clone();
-
-        query_done.add_permits(1);
-
+impl Probing {
+    pub fn new(engine: Engine) -> Self {
         Self {
             projection: Arc::new(Mutex::new(Projection::new())),
-            query_engine: engine.clone(),
-            setup_done_tx,
-            query_done,
+            engine,
         }
     }
 
-    pub fn query_engine(&self) -> &Arc<Mutex<QueryEngine>> {
-        &self.query_engine
+    pub fn engine(&self) -> &Engine {
+        &self.engine
     }
 
     pub fn projection(&self) -> &Arc<Mutex<Projection>> {
         &self.projection
-    }
-
-    pub fn fork(&self) -> Self {
-        // TODO: Register this fork in QueryEngine
-        panic!()
-    }
-
-    /// Consume this setup and wait for the result.
-    pub async fn complete(self) -> UrmResult<()> {
-        self.setup_done_tx
-            .send(())
-            .await
-            .map_err(|_| UrmError::Synchronization)?;
-        self.query_done
-            .acquire()
-            .await
-            .map_err(|_| UrmError::Synchronization)?
-            .forget();
-
-        Ok(())
     }
 }
 
@@ -119,6 +77,7 @@ impl ProbeNode {
 /// Encodes the intent of selecting *something* from a table.
 ///
 /// It's an abstraction over an "SQL"-like select expression.
+///
 struct Select {
     /// TODO: we can have many FROMs in a select.
     from: &'static dyn Table,
@@ -139,6 +98,15 @@ impl Select {
     }
 }
 
+impl std::fmt::Debug for Select {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        let lock = self.projection.lock();
+        write!(fmt, "SELECT {:?}", *lock)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
 pub struct Projection {
     fields: BTreeMap<field::LocalId, QueryField>,
 }
@@ -150,8 +118,8 @@ impl Projection {
         }
     }
 
-    pub fn project_basic_field(&mut self, local_id: field::LocalId) {
-        self.fields.insert(local_id, QueryField::Basic);
+    pub fn project_primitive_field(&mut self, local_id: field::LocalId) {
+        self.fields.insert(local_id, QueryField::Primitive);
     }
 
     pub fn foreign_subselect(
@@ -171,7 +139,8 @@ impl Projection {
     }
 }
 
+#[derive(Debug)]
 enum QueryField {
-    Basic,
+    Primitive,
     Foreign(Select),
 }

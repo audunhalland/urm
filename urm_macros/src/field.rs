@@ -149,7 +149,7 @@ pub fn gen_method(field: &Field, impl_table: &crate::table::ImplTable) -> proc_m
 
     quote! {
         pub fn #method_ident(#inputs) -> #mod_ident::#struct_ident {
-            panic!()
+            #mod_ident::#struct_ident
         }
     }
 }

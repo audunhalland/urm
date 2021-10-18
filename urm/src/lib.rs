@@ -13,13 +13,12 @@
 //!
 
 use async_trait::*;
-use parking_lot::Mutex;
-use std::sync::Arc;
 
 pub use urm_macros::*;
 
 mod engine;
 pub mod field;
+mod never;
 pub mod prelude;
 pub mod probe;
 pub mod query;
@@ -39,13 +38,28 @@ pub struct ProbeSelect<T: Table> {
     t: std::marker::PhantomData<T>,
 }
 
-impl<T: Table> ProbeSelect<T> {
-    pub async fn map<F, U>(&self, _func: F) -> UrmResult<Vec<U>>
+impl<T> ProbeSelect<T>
+where
+    T: Table + Instance,
+{
+    #[cfg(feature = "async_graphql")]
+    pub async fn map<F, U>(&self, func: F, ctx: &async_graphql::Context<'_>) -> UrmResult<Vec<U>>
     where
         F: Fn(Node<T>) -> U,
+        U: async_graphql::ContainerType,
     {
-        // TODO: The whole algorithm!!
-        panic!()
+        let table = T::instance();
+        let (engine, probing) = engine::Engine::new_select(table);
+        let node = Node::<T>::new_probe(probing);
+
+        let container = func(node);
+
+        probe::probe_container_field(&container, ctx);
+
+        let query_engine = engine.query.clone();
+        let dbg = format!("{:?}", query_engine);
+
+        Err(UrmError::CannotSelect(dbg))
     }
 }
 
@@ -55,11 +69,13 @@ pub fn probe_select<T: Table>() -> ProbeSelect<T> {
     }
 }
 
-#[derive(Debug)]
+#[derive(thiserror::Error, Debug, Clone)]
 pub enum UrmError {
+    #[error("Probe error")]
     Probe,
-    Pending,
-    Synchronization,
+
+    #[error("Cannot select {0}")]
+    CannotSelect(String),
 }
 
 pub type UrmResult<T> = Result<T, UrmError>;
@@ -67,57 +83,27 @@ pub type UrmResult<T> = Result<T, UrmError>;
 /// Node is somethings which has a place in the query tree,
 /// which is publicly exposed.
 pub struct Node<T: Table> {
-    state: NodeState,
+    kind: NodeKind,
     table: std::marker::PhantomData<T>,
 }
 
 impl<T: Table> Node<T> {
-    pub fn probe(probe_node: engine::ProbeNode) -> Self {
+    pub fn new_probe(probing: engine::Probing) -> Self {
         Self {
-            state: NodeState::Probe(probe_node),
+            kind: NodeKind::Probe(probing),
             table: std::marker::PhantomData,
-        }
-    }
-
-    /// Clone this node if it's in Probe state
-    pub fn clone_probe(&self) -> UrmResult<Self> {
-        match &self.state {
-            NodeState::Probe(setup) => Ok(Self {
-                state: NodeState::Probe(setup.fork()),
-                table: std::marker::PhantomData,
-            }),
-            _ => Err(UrmError::Probe),
-        }
-    }
-
-    pub fn get_projection(&self) -> Arc<Mutex<engine::Projection>> {
-        match &self.state {
-            NodeState::Probe(setup) => setup.projection().clone(),
-            _ => panic!(),
-        }
-    }
-
-    pub fn get_setup(
-        &self,
-    ) -> (
-        Arc<Mutex<engine::QueryEngine>>,
-        Arc<Mutex<engine::Projection>>,
-    ) {
-        match &self.state {
-            NodeState::Probe(setup) => (setup.query_engine().clone(), setup.projection().clone()),
-            _ => panic!(),
         }
     }
 }
 
-enum NodeState {
-    Probe(engine::ProbeNode),
-    Ready,
+enum NodeKind {
+    Probe(engine::Probing),
+    FetchResult,
 }
 
 #[async_trait]
 pub trait Project<'a, Inputs: 'a, Outputs> {
-    async fn project(self, args: &'a Inputs) -> UrmResult<Outputs>;
+    async fn project(&self, args: &'a Inputs) -> UrmResult<Outputs>;
 }
 
 #[async_trait]
@@ -127,17 +113,18 @@ where
     F: field::Field<Table = T> + field::ProjectAndProbe + 'a,
 {
     async fn project(
-        self,
+        &self,
         field: &'a F,
     ) -> UrmResult<<F::Mechanics as field::FieldMechanics>::Output> {
-        let (query_engine, projection) = self.get_setup();
-
-        // TODO: parallelize:
-        field
-            .project_and_probe(&query_engine, projection.clone())
-            .await?;
-
-        panic!();
+        match &self.kind {
+            NodeKind::Probe(probing) => {
+                field.project_and_probe(probing.engine(), probing.projection())?;
+                never::never().await
+            }
+            NodeKind::FetchResult => {
+                panic!();
+            }
+        }
     }
 }
 
@@ -158,24 +145,25 @@ where
     F1: field::Field<Table = T> + field::ProjectAndProbe + 'a,
 {
     async fn project(
-        self,
+        &self,
         fields: &'a (F0, F1),
     ) -> UrmResult<(
         <F0::Mechanics as field::FieldMechanics>::Output,
         <F1::Mechanics as field::FieldMechanics>::Output,
     )> {
-        let (query_engine, projection) = self.get_setup();
-
-        // TODO: parallelize:
-        fields
-            .0
-            .project_and_probe(&query_engine, projection.clone())
-            .await?;
-        fields
-            .1
-            .project_and_probe(&query_engine, projection.clone())
-            .await?;
-
-        panic!();
+        match &self.kind {
+            NodeKind::Probe(probing) => {
+                fields
+                    .0
+                    .project_and_probe(probing.engine(), &probing.projection())?;
+                fields
+                    .1
+                    .project_and_probe(probing.engine(), probing.projection())?;
+                never::never().await
+            }
+            NodeKind::FetchResult => {
+                panic!();
+            }
+        }
     }
 }

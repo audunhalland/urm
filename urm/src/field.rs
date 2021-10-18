@@ -1,8 +1,7 @@
-use async_trait::*;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
-use crate::engine::QueryEngine;
+use crate::engine::Engine;
 use crate::{Instance, Node, Table, UrmResult};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -33,9 +32,9 @@ pub trait Field: Sized + Send + Sync {
     ) -> probe_shim::ForeignProbeShim<'c, Self, T, Func, Self::Mechanics, Out>
     where
         T: Table,
-        Self::Mechanics: QuantifyProbe<Out> + FieldMechanics<Unit = Node<T>>,
+        Self::Mechanics: FieldMechanics<Unit = Node<T>> + QuantifyProbe<Out>,
         Func: Fn(<Self::Mechanics as FieldMechanics>::Unit) -> Out,
-        Out: crate::probe::Probe,
+        Out: async_graphql::ContainerType,
     {
         probe_shim::ForeignProbeShim::new(ProbeMapping::new(func), ctx)
     }
@@ -47,20 +46,15 @@ pub trait FieldMechanics: Sized {
     type Unit: Send + Sync + 'static;
 
     /// Final, quantified value of the field (possibly Vec<Self::Unit>).
-    type Output;
+    type Output: Send + Sync + 'static;
 }
 
 /// Something that can be probe-projected directly
-///
-/// FIXME: async trait here is a bit overkill, because there
-/// should only be two variants: "primitive" and "foreign". Use
-/// some kind of enum instead.
-#[async_trait]
 pub trait ProjectAndProbe: Field {
-    async fn project_and_probe(
+    fn project_and_probe(
         &self,
-        engine: &Arc<Mutex<QueryEngine>>,
-        projection: Arc<Mutex<crate::engine::Projection>>,
+        engine: &Engine,
+        projection: &Arc<Mutex<crate::engine::Projection>>,
     ) -> UrmResult<()>;
 }
 
@@ -86,17 +80,16 @@ where
     type Output = V;
 }
 
-#[async_trait]
 impl<F, V> ProjectAndProbe for F
 where
     F: Field<Mechanics = Primitive<V>>,
 {
-    async fn project_and_probe(
+    fn project_and_probe(
         &self,
-        _engine: &Arc<Mutex<QueryEngine>>,
-        projection: Arc<Mutex<crate::engine::Projection>>,
+        _engine: &Engine,
+        projection: &Arc<Mutex<crate::engine::Projection>>,
     ) -> UrmResult<()> {
-        projection.lock().project_basic_field(F::local_id());
+        projection.lock().project_primitive_field(F::local_id());
         Ok(())
     }
 }
@@ -151,6 +144,7 @@ impl<Func, In, Out> FieldMechanics for ProbeMapping<Func, In, Out>
 where
     In: QuantifyProbe<Out>,
     Out: Send + Sync + 'static,
+    <<In as QuantifyProbe<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
 {
     type Unit = Out;
     type Output = <In::Quantify as Quantify<Out>>::Output;
@@ -182,7 +176,7 @@ pub mod probe_shim {
         T: Table,
         Func,
         InType: FieldMechanics,
-        Out: crate::probe::Probe,
+        Out: async_graphql::ContainerType,
     > {
         pub probe_mapping: ProbeMapping<Func, InType::Unit, Out>,
         field: std::marker::PhantomData<F>,
@@ -195,7 +189,7 @@ pub mod probe_shim {
         F: Field,
         T: Table,
         InType: FieldMechanics,
-        Out: crate::probe::Probe,
+        Out: async_graphql::ContainerType,
     {
         pub fn new(
             probe_project: ProbeMapping<Func, InType::Unit, Out>,
@@ -216,7 +210,8 @@ pub mod probe_shim {
         T: Table,
         Func: Send + Sync + 'static,
         InType: QuantifyProbe<Out>,
-        Out: crate::probe::Probe + Send + Sync + 'static,
+        <<InType as QuantifyProbe<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
+        Out: async_graphql::ContainerType + Send + Sync + 'static,
     {
         // This is still the source table, not the target table (T)
         type Table = F::Table;
@@ -232,33 +227,32 @@ pub mod probe_shim {
         }
     }
 
-    #[async_trait]
     impl<'c, F, T, Func, InType, Out> ProjectAndProbe for ForeignProbeShim<'c, F, T, Func, InType, Out>
     where
         F: Field<Mechanics = InType>,
         T: Table + Instance,
         Func: (Fn(<InType as FieldMechanics>::Unit) -> Out) + Send + Sync + 'static,
-        InType: QuantifyProbe<Out> + FieldMechanics<Unit = Node<T>>,
-        Out: crate::probe::Probe + async_graphql::OutputType + Send + Sync + 'static,
+        InType: FieldMechanics<Unit = Node<T>> + QuantifyProbe<Out>,
+        <<InType as QuantifyProbe<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
+        Out: async_graphql::ContainerType + async_graphql::OutputType + Send + Sync + 'static,
     {
-        async fn project_and_probe(
+        fn project_and_probe(
             &self,
-            engine: &Arc<Mutex<QueryEngine>>,
-            projection: Arc<Mutex<crate::engine::Projection>>,
+            engine: &Engine,
+            projection: &Arc<Mutex<crate::engine::Projection>>,
         ) -> UrmResult<()> {
-            let sub_node = Node::<T>::probe(crate::engine::ProbeNode::new(engine.clone()));
+            let sub_probing = crate::engine::Probing::new(engine.clone());
+            let sub_projection = sub_probing.projection().clone();
+            let sub_node = Node::<T>::new_probe(sub_probing);
 
             {
                 let mut proj_lock = projection.lock();
-                proj_lock.foreign_subselect(
-                    F::local_id(),
-                    T::instance(),
-                    sub_node.get_projection(),
-                );
+                proj_lock.foreign_subselect(F::local_id(), T::instance(), sub_projection);
             }
 
             let sub_probe = self.probe_mapping.0(sub_node);
-            sub_probe.probe(self.ctx).await?;
+
+            crate::probe::probe_container_field(&sub_probe, self.ctx);
 
             Ok(())
         }

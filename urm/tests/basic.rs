@@ -31,25 +31,27 @@ pub struct Publication(Node<db::Publication>);
 
 pub struct Edition(Node<db::Edition>);
 
-//#[DbObject]
+#[async_graphql::Object]
 impl Publication {
     /// Could do shorthand macro here:
     /// #[project(sql::Publication::id)]
-    pub async fn id(self, ctx: &::async_graphql::context::Context<'_>) -> UrmResult<String> {
+    pub async fn id(&self, ctx: &::async_graphql::Context<'_>) -> UrmResult<String> {
         self.0.project(&db::Publication::id()).await
     }
 
     // A GraphQL query we want to resolve to SQL
     pub async fn editions(
-        self,
-        ctx: &::async_graphql::context::Context<'_>,
-        range: std::ops::Range<usize>,
+        &self,
+        ctx: &::async_graphql::Context<'_>,
+        first: Option<usize>,
+        offset: Option<usize>,
     ) -> UrmResult<Vec<Edition>> {
         let (_id, editions) = self
             .0
             .project(&(
                 db::Publication::id(),
-                db::Publication::editions(range).probe_with(Edition, ctx),
+                db::Publication::editions(offset.unwrap_or(0)..first.unwrap_or(20))
+                    .probe_with(Edition, ctx),
             ))
             .await?;
 
@@ -57,12 +59,9 @@ impl Publication {
     }
 }
 
-// #[DbObject]
+#[async_graphql::Object]
 impl Edition {
-    pub async fn publication(
-        self,
-        ctx: &::async_graphql::context::Context<'_>,
-    ) -> UrmResult<Publication> {
+    pub async fn publication(&self, ctx: &::async_graphql::Context<'_>) -> UrmResult<Publication> {
         Ok(self
             .0
             .project(&db::Edition::publication().probe_with(Publication, ctx))
@@ -70,141 +69,48 @@ impl Edition {
     }
 }
 
-// TODO: move to macro
-mod publication_gql_impls {
-    use super::*;
-    use async_trait::*;
-
-    impl ::async_graphql::Type for Publication {
-        fn type_name() -> std::borrow::Cow<'static, str> {
-            panic!()
-        }
-
-        fn create_type_info(registry: &mut ::async_graphql::registry::Registry) -> String {
-            panic!()
-        }
-    }
-
-    #[async_trait]
-    impl ::async_graphql::OutputType for Publication {
-        async fn resolve(
-            &self,
-            ctx: &::async_graphql::context::ContextSelectionSet<'_>,
-            _field: &::async_graphql::Positioned<::async_graphql::parser::types::Field>,
-        ) -> ::async_graphql::ServerResult<::async_graphql::Value> {
-            ::async_graphql::resolver_utils::resolve_container(ctx, self).await
-        }
-    }
-
-    #[async_trait]
-    impl ::async_graphql::resolver_utils::ContainerType for Publication {
-        async fn resolve_field(
-            &self,
-            ctx: &::async_graphql::context::Context<'_>,
-        ) -> ::async_graphql::ServerResult<Option<::async_graphql::Value>> {
-            let obj = Self(
-                self.0
-                    .clone_probe()
-                    .map_err(|_| ::async_graphql::ServerError::new("Bad state", None))?,
-            );
-
-            if ctx.item.node.name.node == "editions" {
-                let _ans = obj.editions(ctx, 0..1).await;
-            }
-
-            panic!()
-        }
-    }
-
-    #[async_trait]
-    impl urm::probe::Probe for Publication {
-        async fn probe(&self, ctx: &::async_graphql::context::Context<'_>) -> UrmResult<()> {
-            Ok(())
-        }
-    }
-}
-
-// TODO: move to macro
-mod edition_gql_impls {
-    use super::*;
-    use async_trait::*;
-
-    impl ::async_graphql::Type for Edition {
-        fn type_name() -> std::borrow::Cow<'static, str> {
-            panic!()
-        }
-
-        fn create_type_info(registry: &mut ::async_graphql::registry::Registry) -> String {
-            panic!()
-        }
-    }
-
-    #[async_trait]
-    impl ::async_graphql::OutputType for Edition {
-        async fn resolve(
-            &self,
-            ctx: &::async_graphql::context::ContextSelectionSet<'_>,
-            _field: &::async_graphql::Positioned<::async_graphql::parser::types::Field>,
-        ) -> ::async_graphql::ServerResult<::async_graphql::Value> {
-            ::async_graphql::resolver_utils::resolve_container(ctx, self).await
-        }
-    }
-
-    // test impl
-    #[async_trait]
-    impl ::async_graphql::resolver_utils::ContainerType for Edition {
-        async fn resolve_field(
-            &self,
-            ctx: &::async_graphql::context::Context<'_>,
-        ) -> ::async_graphql::ServerResult<Option<::async_graphql::Value>> {
-            let obj = Self(
-                self.0
-                    .clone_probe()
-                    .map_err(|_| ::async_graphql::ServerError::new("Bad state", None))?,
-            );
-
-            if ctx.item.node.name.node == "publication" {
-                let _ans = obj.publication(ctx).await;
-            }
-
-            panic!()
-        }
-    }
-
-    #[async_trait]
-    impl urm::probe::Probe for Edition {
-        async fn probe(&self, ctx: &::async_graphql::context::Context<'_>) -> UrmResult<()> {
-            Ok(())
-        }
-    }
-}
-
 pub struct Query;
 
 // 'regular' GraphQL
+#[async_graphql::Object]
 impl Query {
     // Root query, where the urm query gets 'initialized'
-    pub async fn editions(self) -> UrmResult<Vec<Edition>> {
-        probe_select::<db::Edition>().map(Edition).await
+    pub async fn editions(&self, ctx: &::async_graphql::Context<'_>) -> UrmResult<Vec<Edition>> {
+        probe_select::<db::Edition>().map(Edition, ctx).await
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use async_graphql::Response;
+
     use super::*;
 
     #[tokio::test]
     async fn resolve_test() -> UrmResult<()> {
-        // Let's say we query:
-        // {
-        //    editions(...) {
-        //       publication { id }
-        //    }
-        // }
+        let schema = async_graphql::Schema::new(
+            Query,
+            async_graphql::EmptyMutation,
+            async_graphql::EmptySubscription,
+        );
 
-        let query = Query;
-        let editions = query.editions().await?;
+        let response = schema
+            .execute(
+                r#"
+            {
+                editions {
+                    publication {
+                        id
+                    }
+                }
+            }
+        "#,
+            )
+            .await;
 
-        Ok(())
+        println!("data: {}", response.data);
+        println!("errors: {:?}", response.errors);
+
+        panic!()
     }
 }
