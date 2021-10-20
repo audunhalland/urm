@@ -21,7 +21,26 @@ pub struct Field {
     pub struct_ident: syn::Ident,
     pub meta: Meta,
     pub inputs: syn::punctuated::Punctuated<syn::FnArg, syn::token::Comma>,
-    pub output: syn::Type,
+    return_type: Quantified<ReturnType>,
+}
+
+enum Quantified<T> {
+    Unit(T),
+    Slice(syn::token::Bracket, T),
+}
+
+enum ReturnType {
+    Path(syn::TypePath),
+    Zelf(syn::Ident),
+}
+
+impl syn::spanned::Spanned for ReturnType {
+    fn span(&self) -> Span {
+        match self {
+            Self::Path(path) => path.span(),
+            Self::Zelf(ident) => ident.span()
+        }
+    }
 }
 
 pub struct Meta {
@@ -41,7 +60,7 @@ impl Method {
         let span = method.span();
         let meta = meta_from_attrs(method.attrs)?;
 
-        let output_ty = Self::extract_output_ty(method.sig.output, &meta, span)?;
+        let return_type = Self::extract_quantified_return_type(method.sig.output, span)?;
 
         match method.sig.inputs.first() {
             Some(syn::FnArg::Receiver(_)) => {
@@ -67,7 +86,7 @@ impl Method {
                     struct_ident,
                     meta,
                     inputs: method.sig.inputs,
-                    output: output_ty,
+                    return_type,
                 }))
             }
             _ => {
@@ -76,11 +95,10 @@ impl Method {
         }
     }
 
-    fn extract_output_ty(
+    fn extract_quantified_return_type(
         ret_ty: syn::ReturnType,
-        meta: &Meta,
         field_span: Span,
-    ) -> syn::Result<syn::Type> {
+    ) -> syn::Result<Quantified<ReturnType>> {
         let user_ty = match ret_ty {
             syn::ReturnType::Default => {
                 return Err(syn::Error::new(field_span, "Expected return type"))
@@ -88,18 +106,25 @@ impl Method {
             syn::ReturnType::Type(_, ty) => *ty,
         };
 
-        let ty = match &meta.foreign {
-            Some(foreign) if foreign.is_collection() => match user_ty {
-                syn::Type::Slice(type_slice) => *type_slice.elem,
-                _ => return Err(syn::Error::new(user_ty.span(), "Expected slice type")),
-            },
-            _ => match user_ty {
-                syn::Type::Path(path) => syn::Type::Path(path),
-                _ => return Err(syn::Error::new(user_ty.span(), "Expected a plain type")),
-            },
-        };
+        match user_ty {
+            syn::Type::Slice(type_slice) => Ok(Quantified::Slice(type_slice.bracket_token, Self::extract_return_type(*type_slice.elem)?)),
+            ty => Ok(Quantified::Unit(Self::extract_return_type(ty)?))
+        }
+    }
 
-        Ok(ty)
+    fn extract_return_type(
+        ty: syn::Type
+    ) -> syn::Result<ReturnType> {
+        match ty {
+            syn::Type::Path(path) => {
+                if path.path.segments.len() == 1 && path.path.segments.first().as_ref().unwrap().ident == "Self" {
+                    Ok(ReturnType::Zelf(path.path.segments.into_iter().next().unwrap().ident))
+                } else {
+                    Ok(ReturnType::Path(path))
+                }
+            }
+            _ => return Err(syn::Error::new(ty.span(), "Expected simple Path-like type")),
+        }
     }
 }
 
@@ -134,7 +159,16 @@ pub fn gen_field_struct(
     let field_id = field.field_idx as u16;
     let field_name = &field.field_name;
     let struct_ident = &field.struct_ident;
-    let output = &field.output;
+
+    let return_type_to_tokens = |return_type: &ReturnType| -> proc_macro2::TokenStream {
+        match return_type {
+            ReturnType::Zelf(zelf) => {
+                let span = zelf.span();
+                quote_spanned! {span=> #struct_ident }
+            },
+            ReturnType::Path(path) => quote! { #path }
+        }
+    };
 
     let local_table_path = &impl_table.path;
 
@@ -151,7 +185,7 @@ pub fn gen_field_struct(
         }
     };
 
-    let foreign_field_impl = if let Some(foreign) = &field.meta.foreign {
+    let (output_type, foreign_field_impl) = if let Some(foreign) = &field.meta.foreign {
         let span = foreign.span;
         let foreign_table_path = &foreign.foreign_table_path;
 
@@ -189,6 +223,18 @@ pub fn gen_field_struct(
             }
         };
 
+        let output_type = match foreign.direction {
+            foreign::Direction::SelfReferencesForeign => match &field.return_type {
+                Quantified::Unit(return_type) => return_type_to_tokens(return_type),
+                Quantified::Slice(bracket, _) => syn::Error::new(bracket.span, "Expected non-slice unit type").to_compile_error()
+            }
+            foreign::Direction::ForeignReferencesSelf => match &field.return_type {
+                Quantified::Unit(ty) => syn::Error::new(ty.span(), "Expected slice").to_compile_error(),
+                Quantified::Slice(_, return_type) => return_type_to_tokens(return_type)
+            }
+        };
+
+        (output_type,
         Some(quote_spanned! {span=>
             impl ::urm::field::ForeignField for #struct_ident {
                 type ForeignTable = #foreign_table_path;
@@ -197,9 +243,13 @@ pub fn gen_field_struct(
                     #eq_pred
                 }
             }
-        })
+        }))
     } else {
-        None
+        let output_type = match &field.return_type {
+            Quantified::Unit(return_type) => return_type_to_tokens(return_type),
+            Quantified::Slice(bracket, _) => syn::Error::new(bracket.span, "Expected Unit return type for primitive field").to_compile_error()
+        };
+        (output_type, None)
     };
 
     quote_spanned! {span=>
@@ -209,7 +259,7 @@ pub fn gen_field_struct(
 
         impl ::urm::field::Field for #struct_ident {
             type Table = #local_table_path;
-            type Mechanics = ::urm::field::#mechanics<#output>;
+            type Mechanics = ::urm::field::#mechanics<#output_type>;
 
             fn name(&self) -> &'static str {
                 #field_name

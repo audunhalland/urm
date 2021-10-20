@@ -28,15 +28,6 @@ pub enum Direction {
     ForeignReferencesSelf,
 }
 
-impl Foreign {
-    pub fn is_collection(&self) -> bool {
-        match &self.direction {
-            Direction::ForeignReferencesSelf => true,
-            Direction::SelfReferencesForeign => false,
-        }
-    }
-}
-
 impl syn::parse::Parse for Foreign {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let content;

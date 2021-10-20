@@ -20,6 +20,7 @@ pub fn table(args: TokenStream, input: TokenStream) -> TokenStream {
     let impl_table = syn::parse_macro_input!(input as table::ImplTable);
 
     let tokens = table::gen_table(name, impl_table);
+
     TokenStream::from(tokens)
 }
 

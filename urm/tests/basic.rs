@@ -9,6 +9,8 @@ pub mod db {
 
     #[urm::table("publication")]
     impl Publication {
+        fn all() -> [Self];
+
         fn id(self) -> String;
 
         #[foreign(Edition(publication_id) => Self(id))]
