@@ -1,21 +1,5 @@
 use std::future::Future;
 
-///
-/// The 'probe' procedure involves eagerly walking a tree
-/// to figure out the static structure of a query.
-///
-/*
-#[async_trait]
-pub trait Probe: async_graphql::ContainerType {
-    #[cfg(feature = "async_graphql")]
-    async fn probe(&self, ctx: &async_graphql::context::Context<'_>) -> UrmResult<()> {
-        // let lol = &ctx.item.node.selection_set;
-
-        Ok(())
-    }
-}
-*/
-
 pub fn probe_container<T: async_graphql::ContainerType>(
     container: &T,
     ctx: &async_graphql::context::Context<'_>,
@@ -24,7 +8,7 @@ pub fn probe_container<T: async_graphql::ContainerType>(
     probe_container_selection_set(container, &ctx_obj);
 }
 
-pub fn probe_container_selection_set<T: async_graphql::ContainerType>(
+fn probe_container_selection_set<T: async_graphql::ContainerType>(
     container: &T,
     ctx: &async_graphql::ContextSelectionSet,
 ) {

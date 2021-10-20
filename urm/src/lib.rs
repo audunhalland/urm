@@ -30,7 +30,7 @@ pub trait Table: Send + Sync + 'static {
     fn name(&self) -> &'static str;
 }
 
-/// Provide some &'static instance of a type
+/// Provide some &'static instance of a type.
 pub trait Instance {
     fn instance() -> &'static Self;
 }

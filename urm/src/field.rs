@@ -231,7 +231,7 @@ pub mod probe_shim {
         InType: FieldMechanics<Unit = Node<F::ForeignTable>> + ForeignMechanics<Out>,
         <<InType as ForeignMechanics<Out>>::Quantify as Quantify<Out>>::Output:
             Send + Sync + 'static,
-        Out: async_graphql::ContainerType + async_graphql::OutputType + Send + Sync + 'static,
+        Out: async_graphql::ContainerType + Send + Sync + 'static,
     {
         fn project_and_probe(&self, probing: &Probing) -> UrmResult<()> {
             let foreign_table = F::ForeignTable::instance();

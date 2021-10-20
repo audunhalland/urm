@@ -23,15 +23,6 @@ pub enum Table {
     Foreign(syn::Path),
 }
 
-impl Table {
-    fn is_self(&self) -> bool {
-        match self {
-            Table::Zelf => true,
-            _ => false,
-        }
-    }
-}
-
 pub enum Direction {
     SelfReferencesForeign,
     ForeignReferencesSelf,
