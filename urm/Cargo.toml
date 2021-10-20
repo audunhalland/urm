@@ -18,3 +18,6 @@ noop-waker = "0.1"
 [features]
 default = ["async_graphql"]
 async_graphql = ["async-graphql"]
+
+[dev-dependencies]
+trybuild = "1"

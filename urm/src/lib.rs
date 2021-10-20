@@ -18,6 +18,7 @@ pub use urm_macros::*;
 
 mod engine;
 pub mod expr;
+
 pub mod field;
 mod never;
 pub mod prelude;
@@ -25,6 +26,9 @@ pub mod probe;
 pub mod query;
 
 mod experiment;
+
+#[cfg(test)]
+mod macro_test;
 
 pub trait Table: Send + Sync + 'static {
     fn name(&self) -> &'static str;
@@ -128,6 +132,13 @@ impl<T: Table> Node<T> {
     pub fn new_probe(probing: engine::Probing) -> Self {
         Self {
             kind: NodeKind::Probe(probing),
+            table: std::marker::PhantomData,
+        }
+    }
+
+    pub fn new_deserialize() -> Self {
+        Self {
+            kind: NodeKind::Deserialize,
             table: std::marker::PhantomData,
         }
     }

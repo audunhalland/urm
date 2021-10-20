@@ -1,0 +1,11 @@
+error: Foreign self not supported (yet?)
+ --> tests/macro/foreign.rs:9:15
+  |
+9 |     #[foreign(Self(id) => Self(id))]
+  |               ^^^^
+
+error: No Self(..) found
+  --> tests/macro/foreign.rs:12:15
+   |
+12 |     #[foreign(Bar(id) => Bar(id))]
+   |               ^^^

@@ -6,26 +6,24 @@ use crate::field;
 pub struct ImplTable {
     pub path: syn::Path,
     pub mod_ident: syn::Ident,
-    pub fields: Vec<field::Field>,
+    pub field_results: Vec<syn::Result<field::Field>>,
 }
 
 impl syn::parse::Parse for ImplTable {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let _: syn::token::Impl = input.parse()?;
-        let table: syn::Ident = input.parse()?;
-        let _: syn::token::For = input.parse()?;
         let path: syn::Path = input.parse()?;
-
-        if table != "Table" {
-            return Err(syn::Error::new(table.span(), "expected Table"));
-        }
 
         let content;
         let _brace_token = syn::braced!(content in input);
 
-        let mut fields = Vec::new();
+        let mut field_results = Vec::new();
         while !content.is_empty() {
-            fields.push(field::Field::try_from(fields.len(), content.parse()?)?);
+            field_results.push(
+                content
+                    .parse::<syn::TraitItemMethod>()
+                    .and_then(|method| field::Field::try_from(field_results.len(), method)),
+            );
         }
 
         let ident = &path.segments.last().unwrap().ident;
@@ -35,7 +33,7 @@ impl syn::parse::Parse for ImplTable {
         Ok(ImplTable {
             path,
             mod_ident,
-            fields,
+            field_results,
         })
     }
 }
@@ -44,15 +42,19 @@ pub fn gen_table(table_name: syn::LitStr, impl_table: ImplTable) -> proc_macro2:
     let path = &impl_table.path;
     let mod_ident = &impl_table.mod_ident;
 
-    let field_structs = impl_table
-        .fields
-        .iter()
-        .map(|field| field::gen_field_struct(field, &impl_table));
+    let field_structs = impl_table.field_results.iter().map(|result| {
+        result
+            .as_ref()
+            .map(|field| field::gen_field_struct(field, &impl_table))
+            .unwrap_or_else(|err| err.to_compile_error())
+    });
 
-    let field_methods = impl_table
-        .fields
-        .iter()
-        .map(|field| field::gen_method(field, &impl_table));
+    let field_methods = impl_table.field_results.iter().map(|result| {
+        result
+            .as_ref()
+            .map(|field| field::gen_method(field, &impl_table))
+            .unwrap_or_else(|err| err.to_compile_error())
+    });
 
     quote! {
         impl ::urm::Table for #path {

@@ -1,5 +1,4 @@
 use urm::prelude::*;
-use urm::*;
 
 pub mod db {
     pub struct Publication;
@@ -9,7 +8,7 @@ pub mod db {
     pub struct Contributor;
 
     #[urm::table("publication")]
-    impl Table for Publication {
+    impl Publication {
         fn id() -> String;
 
         #[foreign(Edition(publication_id) => Self(id))]
@@ -17,7 +16,7 @@ pub mod db {
     }
 
     #[urm::table("edition")]
-    impl Table for Edition {
+    impl Edition {
         fn publication_id() -> String;
 
         #[foreign(Self(publication_id) => Publication(id))]
@@ -29,17 +28,17 @@ pub mod db {
 
 /// This object might either be the "root",
 /// or it may be the child of an edition.
-#[derive(Probe)]
-pub struct Publication(Node<db::Publication>);
+#[derive(urm::Probe)]
+pub struct Publication(urm::Node<db::Publication>);
 
-#[derive(Probe)]
-pub struct Edition(Node<db::Edition>);
+#[derive(urm::Probe)]
+pub struct Edition(urm::Node<db::Edition>);
 
 #[async_graphql::Object]
 impl Publication {
     /// Could do shorthand macro here:
     /// #[project(sql::Publication::id)]
-    pub async fn id(&self) -> UrmResult<String> {
+    pub async fn id(&self) -> urm::UrmResult<String> {
         urm::project(self, db::Publication::id()).await
     }
 
@@ -49,7 +48,7 @@ impl Publication {
         ctx: &::async_graphql::Context<'_>,
         first: Option<usize>,
         offset: Option<usize>,
-    ) -> UrmResult<Vec<Edition>> {
+    ) -> urm::UrmResult<Vec<Edition>> {
         let (_id, editions) = urm::project(
             self,
             (
@@ -66,7 +65,10 @@ impl Publication {
 
 #[async_graphql::Object]
 impl Edition {
-    pub async fn publication(&self, ctx: &::async_graphql::Context<'_>) -> UrmResult<Publication> {
+    pub async fn publication(
+        &self,
+        ctx: &::async_graphql::Context<'_>,
+    ) -> urm::UrmResult<Publication> {
         urm::project(
             self,
             db::Edition::publication().probe_with(Publication, ctx),
@@ -81,8 +83,11 @@ pub struct Query;
 #[async_graphql::Object]
 impl Query {
     // Root query, where the urm query gets 'initialized'
-    pub async fn editions(&self, ctx: &::async_graphql::Context<'_>) -> UrmResult<Vec<Edition>> {
-        select::<db::Edition>().probe_with(Edition, ctx).await
+    pub async fn editions(
+        &self,
+        ctx: &::async_graphql::Context<'_>,
+    ) -> urm::UrmResult<Vec<Edition>> {
+        urm::select::<db::Edition>().probe_with(Edition, ctx).await
     }
 }
 
@@ -91,7 +96,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn resolve_test() -> UrmResult<()> {
+    async fn resolve_test() -> urm::UrmResult<()> {
         let schema = async_graphql::Schema::new(
             Query,
             async_graphql::EmptyMutation,
