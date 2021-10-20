@@ -18,6 +18,8 @@ pub mod db {
 
     #[urm::table("edition")]
     impl Table for Edition {
+        fn publication_id() -> String;
+
         #[foreign(Self(publication_id) => Publication(id))]
         fn publication() -> Publication;
     }
@@ -38,7 +40,7 @@ impl Publication {
     /// Could do shorthand macro here:
     /// #[project(sql::Publication::id)]
     pub async fn id(&self) -> UrmResult<String> {
-        urm::project(self, &db::Publication::id()).await
+        urm::project(self, db::Publication::id()).await
     }
 
     // A GraphQL query we want to resolve to SQL
@@ -50,7 +52,7 @@ impl Publication {
     ) -> UrmResult<Vec<Edition>> {
         let (_id, editions) = urm::project(
             self,
-            &(
+            (
                 db::Publication::id(),
                 db::Publication::editions(offset.unwrap_or(0)..first.unwrap_or(20))
                     .probe_with(Edition, ctx),
@@ -67,7 +69,7 @@ impl Edition {
     pub async fn publication(&self, ctx: &::async_graphql::Context<'_>) -> UrmResult<Publication> {
         urm::project(
             self,
-            &db::Edition::publication().probe_with(Publication, ctx),
+            db::Edition::publication().probe_with(Publication, ctx),
         )
         .await
     }

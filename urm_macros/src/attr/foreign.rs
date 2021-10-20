@@ -1,9 +1,16 @@
+use proc_macro2::Span;
 use syn::parse::ParseStream;
 
 pub struct Foreign {
-    pub self_columns: Vec<syn::Ident>,
-    pub foreign_tuple: ColumnTuple,
+    pub span: Span,
+    pub foreign_table_path: syn::Path,
+    pub eq_predicates: Vec<ColumnEqPredicate>,
     pub direction: Direction,
+}
+
+pub struct ColumnEqPredicate {
+    pub local_ident: syn::Ident,
+    pub foreign_ident: syn::Ident,
 }
 
 pub struct ColumnTuple {
@@ -49,27 +56,34 @@ impl syn::parse::Parse for Foreign {
         let _arrow: syn::token::FatArrow = content.parse()?;
         let second: ColumnTuple = content.parse()?;
 
-        if first.table.is_self() && second.table.is_self() {
-            return Err(syn::Error::new(
+        match (first.table, second.table) {
+            (Table::Zelf, Table::Foreign(path)) => Ok(Self {
+                span: content_span,
+                foreign_table_path: path,
+                eq_predicates: create_column_eq_predicates(
+                    first.columns,
+                    second.columns,
+                    content_span,
+                )?,
+                direction: Direction::SelfReferencesForeign,
+            }),
+            (Table::Foreign(path), Table::Zelf) => Ok(Self {
+                span: content_span,
+                foreign_table_path: path,
+                eq_predicates: create_column_eq_predicates(
+                    second.columns,
+                    first.columns,
+                    content_span,
+                )?,
+                direction: Direction::ForeignReferencesSelf,
+            }),
+            (Table::Zelf, Table::Zelf) => Err(syn::Error::new(
                 content_span,
                 format!("Foreign self not supported (yet?)"),
-            ));
-        }
-
-        if first.table.is_self() {
-            Ok(Self {
-                self_columns: first.columns,
-                foreign_tuple: second,
-                direction: Direction::SelfReferencesForeign,
-            })
-        } else if second.table.is_self() {
-            Ok(Self {
-                self_columns: second.columns,
-                foreign_tuple: first,
-                direction: Direction::ForeignReferencesSelf,
-            })
-        } else {
-            Err(syn::Error::new(content_span, format!("No Self(..) found")))
+            )),
+            (Table::Foreign(_), Table::Foreign(_)) => {
+                Err(syn::Error::new(content_span, format!("No Self(..) found")))
+            }
         }
     }
 }
@@ -94,4 +108,33 @@ impl syn::parse::Parse for ColumnTuple {
 
         Ok(Self { table, columns })
     }
+}
+
+fn create_column_eq_predicates(
+    local: Vec<syn::Ident>,
+    foreign: Vec<syn::Ident>,
+    content_span: Span,
+) -> syn::Result<Vec<ColumnEqPredicate>> {
+    if local.len() != foreign.len() {
+        return Err(syn::Error::new(
+            content_span,
+            format!("Must have the same number of columns in self and foreign"),
+        ));
+    }
+
+    if local.len() == 0 {
+        return Err(syn::Error::new(
+            content_span,
+            format!("Must specify at least one field"),
+        ));
+    }
+
+    Ok(local
+        .into_iter()
+        .zip(foreign.into_iter())
+        .map(|(local_ident, foreign_ident)| ColumnEqPredicate {
+            local_ident,
+            foreign_ident,
+        })
+        .collect())
 }

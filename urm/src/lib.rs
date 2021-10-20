@@ -17,6 +17,7 @@ use async_trait::*;
 pub use urm_macros::*;
 
 mod engine;
+pub mod expr;
 pub mod field;
 mod never;
 pub mod prelude;
@@ -35,13 +36,15 @@ pub trait Instance {
 }
 
 pub struct Select<T: Table> {
-    t: std::marker::PhantomData<T>,
+    table: std::marker::PhantomData<T>,
 }
 
 impl<T> Select<T>
 where
     T: Table + Instance,
 {
+    /// Perform probing for the select, thus building a suitable query
+    /// to send to the database.
     #[cfg(feature = "async_graphql")]
     pub async fn probe_with<F, U>(
         &self,
@@ -69,8 +72,35 @@ where
 
 pub fn select<T: Table>() -> Select<T> {
     Select {
-        t: std::marker::PhantomData,
+        table: std::marker::PhantomData,
     }
+}
+
+///
+/// # Project
+///
+/// This function _projects_ a _probe_, and serves two purposes at the same time:
+/// 1. figure out the overall structure and anatomy of a database query (i.e. "query builder")
+/// 2. deserialize/provide actual values originating in the database back to the caller, after
+///    the query has been successfully executed.
+///
+/// This async function operates in two completely different modes, based on which `Node` state
+/// is acquired from the Probe.
+///
+/// If that node is a probing node, the produced future will *never* resolve to a ready value.
+/// If that node is a deserialization node, the produced future will try to yield the requested values.
+///
+/// Therefore, in a probing infrastructure, `project` should always be invoked _as early as possible_
+/// at each graph node. In fact, the async infrastructure is treated as _synchronous_ in a probing
+/// setup, therefore `project` must be the first future that is awaited at each projection root.
+///
+pub async fn project<T, P, M>(probe: &P, arg: M) -> UrmResult<M::Output>
+where
+    T: Table,
+    P: Probe<Table = T>,
+    M: MapProject<T>,
+{
+    arg.map_project(probe.node()).await
 }
 
 #[derive(thiserror::Error, Debug, Clone)]
@@ -109,17 +139,17 @@ enum NodeKind {
 }
 
 ///
-/// # Project
+/// # Probe
 ///
-pub async fn project<T, P, M>(probe: &P, arg: &M) -> UrmResult<M::Output>
-where
-    T: Table,
-    P: Probe<Table = T>,
-    M: MapProject<T>,
-{
-    arg.map_project(probe.node()).await
-}
-
+/// The probing procedure involves looking at related database projections
+/// as a tree, recursively producing a new tree of queries/subqueries that
+/// can later be executed on some database instace.
+///
+/// This trait is implemented for probe-able types.
+/// A `Probe` type will typically represent one "node" in a query tree,
+/// and therefore this trait has an associated type `Table`, which is the
+/// database table queried at this level in the tree.
+///
 pub trait Probe {
     type Table: Table;
 

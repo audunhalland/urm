@@ -67,6 +67,7 @@ pub fn gen_table(table_name: syn::LitStr, impl_table: ImplTable) -> proc_macro2:
 
         mod #mod_ident {
             use super::*;
+            use ::urm::prelude::*;
 
             static INSTANCE: #path = #path;
 

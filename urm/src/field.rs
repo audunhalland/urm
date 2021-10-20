@@ -1,7 +1,5 @@
-use parking_lot::Mutex;
-use std::sync::Arc;
-
-use crate::engine::{Engine, Probing};
+use crate::engine::{Probing, QueryField};
+use crate::expr;
 use crate::{Instance, Node, Table, UrmResult};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -12,31 +10,37 @@ pub struct LocalId(pub u16);
 ///
 pub trait Field: Sized + Send + Sync {
     /// The table that owns this field
-    type Table;
+    type Table: Table;
 
     /// The field 'mechanics', which determines how the field
     /// behaves in the API
     type Mechanics: FieldMechanics;
 
-    fn name() -> &'static str;
+    fn name(&self) -> &'static str;
 
     fn local_id() -> LocalId;
+}
+
+pub trait ForeignField: Field {
+    type ForeignTable: Table + Instance;
+
+    fn join_predicate(&self, local: expr::TableExpr, foreign: expr::TableExpr) -> expr::Predicate;
 
     /// Make a field probe-able by supplying a mapper
     /// function and probing context
     #[cfg(feature = "async_graphql")]
     fn probe_with<'c, T, Func, Out>(
-        &self,
+        self,
         func: Func,
         ctx: &'c ::async_graphql::context::Context<'_>,
-    ) -> probe_shim::ForeignProbeShim<'c, Self, T, Func, Self::Mechanics, Out>
+    ) -> probe_shim::ForeignProbeShim<'c, Self, Func, Self::Mechanics, Out>
     where
         T: Table,
-        Self::Mechanics: FieldMechanics<Unit = Node<T>> + QuantifyProbe<Out>,
+        Self::Mechanics: FieldMechanics<Unit = Node<T>> + ForeignMechanics<Out>,
         Func: Fn(<Self::Mechanics as FieldMechanics>::Unit) -> Out,
         Out: async_graphql::ContainerType,
     {
-        probe_shim::ForeignProbeShim::new(ProbeMapping::new(func), ctx)
+        probe_shim::ForeignProbeShim::new(self, ProbeMapping::new(func), ctx)
     }
 }
 
@@ -56,7 +60,7 @@ pub trait ProjectAndProbe: Field {
 
 /// Quantification of some unit value into quantified output
 /// for the probing process
-pub trait QuantifyProbe<U>: FieldMechanics + Send + Sync + 'static {
+pub trait ForeignMechanics<U>: FieldMechanics + Send + Sync + 'static {
     type Quantify: Quantify<U>;
 }
 
@@ -82,9 +86,10 @@ where
 {
     fn project_and_probe(&self, probing: &Probing) -> UrmResult<()> {
         probing
-            .projection()
+            .select()
+            .projection
             .lock()
-            .project_primitive_field(F::local_id());
+            .insert(F::local_id(), QueryField::Primitive);
         Ok(())
     }
 }
@@ -100,7 +105,7 @@ impl<T: Table> FieldMechanics for ForeignOneToOne<T> {
     type Output = Node<T>;
 }
 
-impl<T: Table, U> QuantifyProbe<U> for ForeignOneToOne<T> {
+impl<T: Table, U> ForeignMechanics<U> for ForeignOneToOne<T> {
     type Quantify = Unit;
 }
 
@@ -115,7 +120,7 @@ impl<T: Table> FieldMechanics for ForeignOneToMany<T> {
     type Output = Vec<Node<T>>;
 }
 
-impl<T: Table, U> QuantifyProbe<U> for ForeignOneToMany<T> {
+impl<T: Table, U> ForeignMechanics<U> for ForeignOneToMany<T> {
     type Quantify = Vector;
 }
 
@@ -137,9 +142,9 @@ where
 
 impl<Func, In, Out> FieldMechanics for ProbeMapping<Func, In, Out>
 where
-    In: QuantifyProbe<Out>,
+    In: ForeignMechanics<Out>,
     Out: Send + Sync + 'static,
-    <<In as QuantifyProbe<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
+    <<In as ForeignMechanics<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
 {
     type Unit = Out;
     type Output = <In::Quantify as Quantify<Out>>::Output;
@@ -167,45 +172,42 @@ pub mod probe_shim {
 
     pub struct ForeignProbeShim<
         'c,
-        F: Field,
-        T: Table,
+        F: ForeignField,
         Func,
         InType: FieldMechanics,
         Out: async_graphql::ContainerType,
     > {
-        pub probe_mapping: ProbeMapping<Func, InType::Unit, Out>,
-        field: std::marker::PhantomData<F>,
-        table: std::marker::PhantomData<T>,
+        field: F,
+        probe_mapping: ProbeMapping<Func, InType::Unit, Out>,
         ctx: &'c ::async_graphql::context::Context<'c>,
     }
 
-    impl<'c, F, T, Func, InType, Out> ForeignProbeShim<'c, F, T, Func, InType, Out>
+    impl<'c, F, Func, InType, Out> ForeignProbeShim<'c, F, Func, InType, Out>
     where
-        F: Field,
-        T: Table,
+        F: ForeignField,
         InType: FieldMechanics,
         Out: async_graphql::ContainerType,
     {
         pub fn new(
-            probe_project: ProbeMapping<Func, InType::Unit, Out>,
+            field: F,
+            probe_mapping: ProbeMapping<Func, InType::Unit, Out>,
             ctx: &'c ::async_graphql::context::Context<'c>,
         ) -> Self {
             Self {
-                probe_mapping: probe_project,
-                field: std::marker::PhantomData,
-                table: std::marker::PhantomData,
+                field,
+                probe_mapping,
                 ctx,
             }
         }
     }
 
-    impl<'c, F, T, Func, InType, Out> Field for ForeignProbeShim<'c, F, T, Func, InType, Out>
+    impl<'c, F, Func, InType, Out> Field for ForeignProbeShim<'c, F, Func, InType, Out>
     where
-        F: Field<Mechanics = InType>,
-        T: Table,
+        F: ForeignField<Mechanics = InType>,
         Func: Send + Sync + 'static,
-        InType: QuantifyProbe<Out>,
-        <<InType as QuantifyProbe<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
+        InType: ForeignMechanics<Out>,
+        <<InType as ForeignMechanics<Out>>::Quantify as Quantify<Out>>::Output:
+            Send + Sync + 'static,
         Out: async_graphql::ContainerType + Send + Sync + 'static,
     {
         // This is still the source table, not the target table (T)
@@ -213,8 +215,8 @@ pub mod probe_shim {
 
         type Mechanics = ProbeMapping<Func, F::Mechanics, Out>;
 
-        fn name() -> &'static str {
-            F::name()
+        fn name(&self) -> &'static str {
+            self.field.name()
         }
 
         fn local_id() -> LocalId {
@@ -222,51 +224,41 @@ pub mod probe_shim {
         }
     }
 
-    impl<'c, F, T, Func, InType, Out> ProjectAndProbe for ForeignProbeShim<'c, F, T, Func, InType, Out>
+    impl<'c, F, Func, InType, Out> ProjectAndProbe for ForeignProbeShim<'c, F, Func, InType, Out>
     where
-        F: Field<Mechanics = InType>,
-        T: Table + Instance,
+        F: ForeignField<Mechanics = InType>,
         Func: (Fn(<InType as FieldMechanics>::Unit) -> Out) + Send + Sync + 'static,
-        InType: FieldMechanics<Unit = Node<T>> + QuantifyProbe<Out>,
-        <<InType as QuantifyProbe<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
+        InType: FieldMechanics<Unit = Node<F::ForeignTable>> + ForeignMechanics<Out>,
+        <<InType as ForeignMechanics<Out>>::Quantify as Quantify<Out>>::Output:
+            Send + Sync + 'static,
         Out: async_graphql::ContainerType + async_graphql::OutputType + Send + Sync + 'static,
     {
         fn project_and_probe(&self, probing: &Probing) -> UrmResult<()> {
-            let sub_probing = crate::engine::Probing::new(probing.engine().clone());
-            let sub_projection = sub_probing.projection().clone();
-            let sub_node = Node::<T>::new_probe(sub_probing);
+            let foreign_table = F::ForeignTable::instance();
+            let sub_select = probing.engine().query.lock().new_select(foreign_table);
 
             {
-                let mut proj_lock = probing.projection().lock();
-                proj_lock.foreign_subselect(F::local_id(), T::instance(), sub_projection);
+                let mut proj_lock = probing.select().projection.lock();
+                proj_lock.insert(
+                    F::local_id(),
+                    QueryField::Foreign {
+                        select: sub_select.clone(),
+                        join_predicate: self
+                            .field
+                            .join_predicate(probing.select().from.clone(), sub_select.from.clone()),
+                    },
+                );
             }
 
-            let sub_probe = self.probe_mapping.0(sub_node);
+            let sub_node = Node::<F::ForeignTable>::new_probe(crate::engine::Probing::new(
+                probing.engine().clone(),
+                sub_select,
+            ));
 
+            let sub_probe = self.probe_mapping.0(sub_node);
             crate::probe::probe_container(&sub_probe, self.ctx);
 
             Ok(())
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct MyTable;
-    struct MyField;
-
-    impl Field for MyField {
-        type Table = MyTable;
-        type Mechanics = Primitive<String>;
-
-        fn name() -> &'static str {
-            return "test";
-        }
-
-        fn local_id() -> LocalId {
-            LocalId(0)
         }
     }
 }

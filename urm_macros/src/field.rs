@@ -107,7 +107,7 @@ pub fn gen_field_struct(
     let struct_ident = &field.struct_ident;
     let output = &field.output;
 
-    let table_path = &impl_table.path;
+    let local_table_path = &impl_table.path;
 
     let mechanics = match field
         .meta
@@ -122,14 +122,66 @@ pub fn gen_field_struct(
         }
     };
 
+    let foreign_field_impl = if let Some(foreign) = &field.meta.foreign {
+        let span = foreign.span;
+        let foreign_table_path = &foreign.foreign_table_path;
+
+        let gen_table_column = |table_expr: proc_macro2::TokenStream,
+                                table_path: &syn::Path,
+                                field_ident: &syn::Ident| {
+            let span = field_ident.span();
+
+            quote_spanned! {span=>
+                urm::expr::Expr::TableColumn(#table_expr.clone(), #table_path::#field_ident().name())
+            }
+        };
+
+        let gen_eq_pred = |p: &foreign::ColumnEqPredicate| {
+            let local = gen_table_column(quote! { local_table }, local_table_path, &p.local_ident);
+            let foreign = gen_table_column(
+                quote! { foreign_table },
+                foreign_table_path,
+                &p.foreign_ident,
+            );
+
+            quote_spanned! {span=>
+                ::urm::expr::Predicate::Eq(#local, #foreign)
+            }
+        };
+
+        let eq_pred = match foreign.eq_predicates.len() {
+            1 => gen_eq_pred(&foreign.eq_predicates[0]),
+            _ => {
+                let eq_preds = foreign.eq_predicates.iter().map(gen_eq_pred);
+
+                quote_spanned! {span=>
+                    ::urm::expr::Predicate::And(#(#eq_preds),*)
+                }
+            }
+        };
+
+        Some(quote_spanned! {span=>
+            impl ::urm::field::ForeignField for #struct_ident {
+                type ForeignTable = #foreign_table_path;
+
+                fn join_predicate(&self, local_table: ::urm::expr::TableExpr, foreign_table: ::urm::expr::TableExpr) -> ::urm::expr::Predicate {
+                    #eq_pred
+                }
+            }
+        })
+    } else {
+        None
+    };
+
     quote_spanned! {span=>
+        #[derive(Debug)]
         pub struct #struct_ident;
 
         impl ::urm::field::Field for #struct_ident {
-            type Table = #table_path;
+            type Table = #local_table_path;
             type Mechanics = ::urm::field::#mechanics<#output>;
 
-            fn name() -> &'static str {
+            fn name(&self) -> &'static str {
                 #field_name
             }
 
@@ -137,6 +189,8 @@ pub fn gen_field_struct(
                 ::urm::field::LocalId(#field_id)
             }
         }
+
+        #foreign_field_impl
     }
 }
 
