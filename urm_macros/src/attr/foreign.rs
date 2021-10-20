@@ -70,7 +70,7 @@ impl syn::parse::Parse for Foreign {
             }),
             (Table::Zelf, Table::Zelf) => Err(syn::Error::new(
                 content_span,
-                format!("Foreign self not supported (yet?)"),
+                format!("Self-referential not supported (yet?)"),
             )),
             (Table::Foreign(_), Table::Foreign(_)) => {
                 Err(syn::Error::new(content_span, format!("No Self(..) found")))

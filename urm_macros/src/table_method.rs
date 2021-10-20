@@ -5,6 +5,14 @@ use syn::spanned::Spanned;
 use crate::attr::attr_util;
 use crate::attr::foreign;
 
+pub enum Method {
+    /// An associated function (without a `self`) becomes a 'selector':
+    Selector,
+    /// A proper method with `self` receiver becomes a Field:
+    Field(Field),
+    Error(syn::Error)
+}
+
 pub struct Field {
     pub span: proc_macro2::Span,
     pub field_idx: usize,
@@ -20,37 +28,52 @@ pub struct Meta {
     pub foreign: Option<foreign::Foreign>,
 }
 
-impl Field {
-    pub fn try_from(field_idx: usize, method: syn::TraitItemMethod) -> Result<Self, syn::Error> {
+impl Method {
+    pub fn new(field_idx: usize, ast: syn::Result<syn::TraitItemMethod>) -> Self {
+        match Self::try_from_ast(field_idx, ast) {
+            Err(error) => Self::Error(error),
+            Ok(method) => method
+        }
+    }
+
+    fn try_from_ast(field_idx: usize, ast: syn::Result<syn::TraitItemMethod>) -> syn::Result<Self> {
+        let method = ast?;
         let span = method.span();
         let meta = meta_from_attrs(method.attrs)?;
 
         let output_ty = Self::extract_output_ty(method.sig.output, &meta, span)?;
 
-        let field_name = method.sig.ident.to_string();
-        let mut method_chars = field_name.chars();
-        let struct_ident = quote::format_ident!(
-            "{}__",
-            method_chars
-                .next()
-                .unwrap()
-                .to_uppercase()
-                .chain(method_chars)
-                .collect::<String>()
-        );
+        match method.sig.inputs.first() {
+            Some(syn::FnArg::Receiver(_)) => {
+                let field_name = method.sig.ident.to_string();
+                let mut method_chars = field_name.chars();
+                let struct_ident = quote::format_ident!(
+                    "{}__",
+                    method_chars
+                        .next()
+                        .unwrap()
+                        .to_uppercase()
+                        .chain(method_chars)
+                        .collect::<String>()
+                );
 
-        let field_name = syn::LitStr::new(&field_name, method.sig.ident.span());
+                let field_name = syn::LitStr::new(&field_name, method.sig.ident.span());
 
-        Ok(Field {
-            span,
-            field_idx,
-            field_name,
-            method_ident: method.sig.ident,
-            struct_ident,
-            meta,
-            inputs: method.sig.inputs,
-            output: output_ty,
-        })
+                Ok(Self::Field(Field {
+                    span,
+                    field_idx,
+                    field_name,
+                    method_ident: method.sig.ident,
+                    struct_ident,
+                    meta,
+                    inputs: method.sig.inputs,
+                    output: output_ty,
+                }))
+            }
+            _ => {
+                Ok(Self::Selector)
+            }
+        }
     }
 
     fn extract_output_ty(
@@ -98,9 +121,15 @@ fn meta_from_attrs(attrs: Vec<syn::Attribute>) -> syn::Result<Meta> {
 }
 
 pub fn gen_field_struct(
-    field: &Field,
+    method: &Method,
     impl_table: &crate::table::ImplTable,
 ) -> proc_macro2::TokenStream {
+    let field = match method {
+        Method::Selector => return quote! {},
+        Method::Field(field) => field,
+        Method::Error(error) => return error.to_compile_error(),
+    };
+
     let span = field.span;
     let field_id = field.field_idx as u16;
     let field_name = &field.field_name;
@@ -132,7 +161,7 @@ pub fn gen_field_struct(
             let span = field_ident.span();
 
             quote_spanned! {span=>
-                urm::expr::Expr::TableColumn(#table_expr.clone(), #table_path::#field_ident().name())
+                urm::expr::Expr::TableColumn(#table_expr.clone(), #table_path.#field_ident().name())
             }
         };
 
@@ -175,6 +204,7 @@ pub fn gen_field_struct(
 
     quote_spanned! {span=>
         #[derive(Debug)]
+        #[allow(non_camel_case_types)]
         pub struct #struct_ident;
 
         impl ::urm::field::Field for #struct_ident {
@@ -194,7 +224,12 @@ pub fn gen_field_struct(
     }
 }
 
-pub fn gen_method(field: &Field, impl_table: &crate::table::ImplTable) -> proc_macro2::TokenStream {
+pub fn gen_method(method: &Method, impl_table: &crate::table::ImplTable) -> proc_macro2::TokenStream {
+    let field = match method {
+        Method::Selector => return quote!{},
+        Method::Field(field) => field,
+        Method::Error(error) => return error.to_compile_error(),
+    };
     let method_ident = &field.method_ident;
     let inputs = &field.inputs;
 

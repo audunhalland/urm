@@ -1,12 +1,12 @@
 use quote::quote;
 use syn::parse::ParseStream;
 
-use crate::field;
+use crate::table_method;
 
 pub struct ImplTable {
     pub path: syn::Path,
     pub mod_ident: syn::Ident,
-    pub field_results: Vec<syn::Result<field::Field>>,
+    pub methods: Vec<table_method::Method>,
 }
 
 impl syn::parse::Parse for ImplTable {
@@ -17,13 +17,9 @@ impl syn::parse::Parse for ImplTable {
         let content;
         let _brace_token = syn::braced!(content in input);
 
-        let mut field_results = Vec::new();
+        let mut methods = Vec::new();
         while !content.is_empty() {
-            field_results.push(
-                content
-                    .parse::<syn::TraitItemMethod>()
-                    .and_then(|method| field::Field::try_from(field_results.len(), method)),
-            );
+            methods.push(table_method::Method::new(methods.len(), content.parse()));
         }
 
         let ident = &path.segments.last().unwrap().ident;
@@ -33,7 +29,7 @@ impl syn::parse::Parse for ImplTable {
         Ok(ImplTable {
             path,
             mod_ident,
-            field_results,
+            methods,
         })
     }
 }
@@ -42,18 +38,12 @@ pub fn gen_table(table_name: syn::LitStr, impl_table: ImplTable) -> proc_macro2:
     let path = &impl_table.path;
     let mod_ident = &impl_table.mod_ident;
 
-    let field_structs = impl_table.field_results.iter().map(|result| {
-        result
-            .as_ref()
-            .map(|field| field::gen_field_struct(field, &impl_table))
-            .unwrap_or_else(|err| err.to_compile_error())
+    let field_structs = impl_table.methods.iter().map(|method| {
+        table_method::gen_field_struct(method, &impl_table)
     });
 
-    let field_methods = impl_table.field_results.iter().map(|result| {
-        result
-            .as_ref()
-            .map(|field| field::gen_method(field, &impl_table))
-            .unwrap_or_else(|err| err.to_compile_error())
+    let field_methods = impl_table.methods.iter().map(|method| {
+        table_method::gen_method(method, &impl_table)
     });
 
     quote! {

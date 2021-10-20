@@ -27,9 +27,6 @@ pub mod query;
 
 mod experiment;
 
-#[cfg(test)]
-mod macro_test;
-
 pub trait Table: Send + Sync + 'static {
     fn name(&self) -> &'static str;
 }

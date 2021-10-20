@@ -3,7 +3,7 @@
 extern crate proc_macro;
 
 mod derive_probe;
-mod field;
+mod table_method;
 mod table;
 
 mod attr {
@@ -19,7 +19,8 @@ pub fn table(args: TokenStream, input: TokenStream) -> TokenStream {
     let name: syn::LitStr = syn::parse_macro_input!(args as syn::LitStr);
     let impl_table = syn::parse_macro_input!(input as table::ImplTable);
 
-    TokenStream::from(table::gen_table(name, impl_table))
+    let tokens = table::gen_table(name, impl_table);
+    TokenStream::from(tokens)
 }
 
 #[proc_macro_derive(Probe, attributes())]
