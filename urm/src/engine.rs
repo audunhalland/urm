@@ -15,7 +15,7 @@ pub struct Engine {
 impl Engine {
     pub fn new_select(from: &'static dyn Table) -> (Self, Probing) {
         let root_select = Arc::new(Select {
-            from: expr::TableExpr {
+            from: expr::TableAlias {
                 table: from,
                 alias: 0,
             },
@@ -43,7 +43,7 @@ pub struct QueryEngine {
 impl QueryEngine {
     pub fn new_select(&self, from: &'static dyn Table) -> Arc<Select> {
         Arc::new(Select {
-            from: expr::TableExpr {
+            from: expr::TableAlias {
                 table: from,
                 alias: 0,
             },
@@ -92,7 +92,7 @@ impl Probing {
 ///
 pub struct Select {
     /// TODO: we can have many FROMs in a select.
-    pub from: expr::TableExpr,
+    pub from: expr::TableAlias,
 
     /// The projection, which is getting built dynamically. Eh...
     /// TODO: Does the projection contain all child "queries"?

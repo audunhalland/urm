@@ -10,7 +10,7 @@ pub enum Method {
     Selector,
     /// A proper method with `self` receiver becomes a Field:
     Field(Field),
-    Error(syn::Error)
+    Error(syn::Error),
 }
 
 pub struct Field {
@@ -38,7 +38,7 @@ impl syn::spanned::Spanned for ReturnType {
     fn span(&self) -> Span {
         match self {
             Self::Path(path) => path.span(),
-            Self::Zelf(ident) => ident.span()
+            Self::Zelf(ident) => ident.span(),
         }
     }
 }
@@ -51,7 +51,7 @@ impl Method {
     pub fn new(field_idx: usize, ast: syn::Result<syn::TraitItemMethod>) -> Self {
         match Self::try_from_ast(field_idx, ast) {
             Err(error) => Self::Error(error),
-            Ok(method) => method
+            Ok(method) => method,
         }
     }
 
@@ -89,9 +89,7 @@ impl Method {
                     return_type,
                 }))
             }
-            _ => {
-                Ok(Self::Selector)
-            }
+            _ => Ok(Self::Selector),
         }
     }
 
@@ -107,18 +105,23 @@ impl Method {
         };
 
         match user_ty {
-            syn::Type::Slice(type_slice) => Ok(Quantified::Slice(type_slice.bracket_token, Self::extract_return_type(*type_slice.elem)?)),
-            ty => Ok(Quantified::Unit(Self::extract_return_type(ty)?))
+            syn::Type::Slice(type_slice) => Ok(Quantified::Slice(
+                type_slice.bracket_token,
+                Self::extract_return_type(*type_slice.elem)?,
+            )),
+            ty => Ok(Quantified::Unit(Self::extract_return_type(ty)?)),
         }
     }
 
-    fn extract_return_type(
-        ty: syn::Type
-    ) -> syn::Result<ReturnType> {
+    fn extract_return_type(ty: syn::Type) -> syn::Result<ReturnType> {
         match ty {
             syn::Type::Path(path) => {
-                if path.path.segments.len() == 1 && path.path.segments.first().as_ref().unwrap().ident == "Self" {
-                    Ok(ReturnType::Zelf(path.path.segments.into_iter().next().unwrap().ident))
+                if path.path.segments.len() == 1
+                    && path.path.segments.first().as_ref().unwrap().ident == "Self"
+                {
+                    Ok(ReturnType::Zelf(
+                        path.path.segments.into_iter().next().unwrap().ident,
+                    ))
                 } else {
                     Ok(ReturnType::Path(path))
                 }
@@ -156,8 +159,6 @@ pub fn gen_field_struct(
     };
 
     let span = field.span;
-    let field_id = field.field_idx as u16;
-    let field_name = &field.field_name;
     let struct_ident = &field.struct_ident;
 
     let return_type_to_tokens = |return_type: &ReturnType| -> proc_macro2::TokenStream {
@@ -165,8 +166,8 @@ pub fn gen_field_struct(
             ReturnType::Zelf(zelf) => {
                 let span = zelf.span();
                 quote_spanned! {span=> #struct_ident }
-            },
-            ReturnType::Path(path) => quote! { #path }
+            }
+            ReturnType::Path(path) => quote! { #path },
         }
     };
 
@@ -179,13 +180,15 @@ pub fn gen_field_struct(
         .map(|foreign| &foreign.direction)
     {
         None => quote_spanned! {span=> Primitive },
-        Some(foreign::Direction::SelfReferencesForeign) => quote_spanned! {span=> ForeignOneToOne },
+        Some(foreign::Direction::SelfReferencesForeign) => {
+            quote_spanned! {span=> OneToOneMechanics }
+        }
         Some(foreign::Direction::ForeignReferencesSelf) => {
-            quote_spanned! {span=> ForeignOneToMany }
+            quote_spanned! {span=> OneToManyMechanics }
         }
     };
 
-    let (output_type, foreign_field_impl) = if let Some(foreign) = &field.meta.foreign {
+    if let Some(foreign) = &field.meta.foreign {
         let span = foreign.span;
         let foreign_table_path = &foreign.foreign_table_path;
 
@@ -226,57 +229,51 @@ pub fn gen_field_struct(
         let output_type = match foreign.direction {
             foreign::Direction::SelfReferencesForeign => match &field.return_type {
                 Quantified::Unit(return_type) => return_type_to_tokens(return_type),
-                Quantified::Slice(bracket, _) => syn::Error::new(bracket.span, "Expected non-slice unit type").to_compile_error()
-            }
+                Quantified::Slice(bracket, _) => {
+                    syn::Error::new(bracket.span, "Expected non-slice unit type").to_compile_error()
+                }
+            },
             foreign::Direction::ForeignReferencesSelf => match &field.return_type {
-                Quantified::Unit(ty) => syn::Error::new(ty.span(), "Expected slice").to_compile_error(),
-                Quantified::Slice(_, return_type) => return_type_to_tokens(return_type)
-            }
+                Quantified::Unit(ty) => {
+                    syn::Error::new(ty.span(), "Expected slice").to_compile_error()
+                }
+                Quantified::Slice(_, return_type) => return_type_to_tokens(return_type),
+            },
         };
 
-        (output_type,
-        Some(quote_spanned! {span=>
+        quote_spanned! {span=>
+            #[derive(Debug)]
+            #[allow(non_camel_case_types)]
+            pub struct #struct_ident;
+
+            impl ::urm::field::Field for #struct_ident {
+                type Table = #local_table_path;
+                type Mechanics = ::urm::field::#mechanics<#output_type>;
+            }
+
             impl ::urm::field::ForeignField for #struct_ident {
                 type ForeignTable = #foreign_table_path;
 
-                fn join_predicate(&self, local_table: ::urm::expr::TableExpr, foreign_table: ::urm::expr::TableExpr) -> ::urm::expr::Predicate {
+                fn join_predicate(
+                    &self,
+                    local_table: ::urm::expr::TableAlias,
+                    foreign_table: ::urm::expr::TableAlias
+                ) -> ::urm::expr::Predicate {
                     #eq_pred
                 }
             }
-        }))
-    } else {
-        let output_type = match &field.return_type {
-            Quantified::Unit(return_type) => return_type_to_tokens(return_type),
-            Quantified::Slice(bracket, _) => syn::Error::new(bracket.span, "Expected Unit return type for primitive field").to_compile_error()
-        };
-        (output_type, None)
-    };
-
-    quote_spanned! {span=>
-        #[derive(Debug)]
-        #[allow(non_camel_case_types)]
-        pub struct #struct_ident;
-
-        impl ::urm::field::Field for #struct_ident {
-            type Table = #local_table_path;
-            type Mechanics = ::urm::field::#mechanics<#output_type>;
-
-            fn name(&self) -> &'static str {
-                #field_name
-            }
-
-            fn local_id() -> ::urm::field::LocalId {
-                ::urm::field::LocalId(#field_id)
-            }
         }
-
-        #foreign_field_impl
+    } else {
+        quote! {}
     }
 }
 
-pub fn gen_method(method: &Method, impl_table: &crate::table::ImplTable) -> proc_macro2::TokenStream {
+pub fn gen_method(
+    method: &Method,
+    impl_table: &crate::table::ImplTable,
+) -> proc_macro2::TokenStream {
     let field = match method {
-        Method::Selector => return quote!{},
+        Method::Selector => return quote! {},
         Method::Field(field) => field,
         Method::Error(error) => return error.to_compile_error(),
     };
@@ -286,9 +283,36 @@ pub fn gen_method(method: &Method, impl_table: &crate::table::ImplTable) -> proc
     let mod_ident = &impl_table.mod_ident;
     let struct_ident = &field.struct_ident;
 
-    quote! {
-        pub fn #method_ident(#inputs) -> #mod_ident::#struct_ident {
-            #mod_ident::#struct_ident
+    if let Some(_) = &field.meta.foreign {
+        quote! {
+            pub fn #method_ident(#inputs) -> #mod_ident::#struct_ident {
+                #mod_ident::#struct_ident
+            }
+        }
+    } else {
+        let local_table_path = &impl_table.path;
+        let field_name = &field.field_name;
+        let field_id = field.field_idx as u16;
+
+        let value = match &field.return_type {
+            Quantified::Unit(return_type) => match return_type {
+                ReturnType::Zelf(zelf) => {
+                    syn::Error::new(zelf.span(), "Expected a type, not Self").to_compile_error()
+                }
+                ReturnType::Path(path) => quote! { #path },
+            },
+            Quantified::Slice(bracket, _) => {
+                syn::Error::new(bracket.span, "Expected non-slice unit type").to_compile_error()
+            }
+        };
+
+        quote! {
+            pub fn #method_ident(#inputs) -> ::urm::field::Primitive<#local_table_path, #value> {
+                ::urm::field::Primitive::new(
+                    #field_name,
+                    ::urm::field::LocalId(#field_id)
+                )
+            }
         }
     }
 }

@@ -16,16 +16,16 @@ use async_trait::*;
 
 pub use urm_macros::*;
 
-mod engine;
 pub mod expr;
-
 pub mod field;
-mod never;
+pub mod filter;
 pub mod prelude;
 pub mod probe;
 pub mod query;
 
+mod engine;
 mod experiment;
+mod never;
 
 pub trait Table: Send + Sync + 'static {
     fn name(&self) -> &'static str;
@@ -44,6 +44,13 @@ impl<T> Select<T>
 where
     T: Table + Instance,
 {
+    pub fn filter<F>(self, _filter: F) -> Self
+    where
+        F: filter::Filter<T>,
+    {
+        self
+    }
+
     /// Perform probing for the select, thus building a suitable query
     /// to send to the database.
     #[cfg(feature = "async_graphql")]
@@ -71,7 +78,10 @@ where
     }
 }
 
-pub fn select<T: Table>() -> Select<T> {
+pub fn select<T>() -> Select<T>
+where
+    T: Table,
+{
     Select {
         table: std::marker::PhantomData,
     }

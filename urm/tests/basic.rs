@@ -14,11 +14,14 @@ pub mod db {
         fn id(self) -> String;
 
         #[foreign(Edition(publication_id) => Self(id))]
-        fn editions(self, _: std::ops::Range<usize>) -> [Edition];
+        fn editions(self) -> [Edition];
     }
 
     #[urm::table("edition")]
     impl Edition {
+        fn all() -> [Self];
+
+        fn id(self) -> String;
         fn publication_id(self) -> String;
 
         #[foreign(Self(publication_id) => Publication(id))]
@@ -38,8 +41,6 @@ pub struct Edition(urm::Node<db::Edition>);
 
 #[async_graphql::Object]
 impl Publication {
-    /// Could do shorthand macro here:
-    /// #[project(sql::Publication::id)]
     pub async fn id(&self) -> urm::UrmResult<String> {
         urm::project(self, db::Publication.id()).await
     }
@@ -55,7 +56,9 @@ impl Publication {
             self,
             (
                 db::Publication.id(),
-                db::Publication.editions(offset.unwrap_or(0)..first.unwrap_or(20))
+                db::Publication
+                    .editions()
+                    .filter(offset..first.or(Some(20)))
                     .probe_with(Edition, ctx),
             ),
         )
@@ -85,7 +88,7 @@ impl Query {
         &self,
         ctx: &::async_graphql::Context<'_>,
     ) -> urm::UrmResult<Vec<Edition>> {
-        urm::select::<db::Edition>().probe_with(Edition, ctx).await
+        urm::select().filter(0..20).probe_with(Edition, ctx).await
     }
 }
 

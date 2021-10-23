@@ -15,16 +15,26 @@ pub trait Field: Sized + Send + Sync {
     /// The field 'mechanics', which determines how the field
     /// behaves in the API
     type Mechanics: FieldMechanics;
+}
 
+pub trait PrimitiveField: Field {
     fn name(&self) -> &'static str;
 
-    fn local_id() -> LocalId;
+    fn local_id(&self) -> LocalId;
 }
 
 pub trait ForeignField: Field {
     type ForeignTable: Table + Instance;
 
-    fn join_predicate(&self, local: expr::TableExpr, foreign: expr::TableExpr) -> expr::Predicate;
+    fn join_predicate(&self, local: expr::TableAlias, foreign: expr::TableAlias)
+        -> expr::Predicate;
+
+    fn filter<F>(self, _filter: F) -> Self
+    where
+        F: crate::filter::Filter<Self::ForeignTable>,
+    {
+        self
+    }
 
     /// Make a field probe-able by supplying a mapper
     /// function and probing context
@@ -54,7 +64,7 @@ pub trait FieldMechanics: Sized {
 }
 
 /// Something that can be probe-projected directly
-pub trait ProjectAndProbe: Field {
+pub trait ProjectAndProbe {
     fn project_and_probe(&self, probing: &Probing) -> UrmResult<()>;
 }
 
@@ -64,15 +74,60 @@ pub trait ForeignMechanics<U>: FieldMechanics + Send + Sync + 'static {
     type Quantify: Quantify<U>;
 }
 
+pub struct Primitive<T: Table, V: Sized + Send + Sync + 'static> {
+    name: &'static str,
+    local_id: LocalId,
+    table: std::marker::PhantomData<T>,
+    value: std::marker::PhantomData<V>,
+}
+
+impl<T, V> Primitive<T, V>
+where
+    T: Table,
+    V: Sized + Send + Sync + 'static,
+{
+    pub fn new(name: &'static str, local_id: LocalId) -> Self {
+        Self {
+            name,
+            local_id,
+            table: std::marker::PhantomData,
+            value: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T, V> Field for Primitive<T, V>
+where
+    T: Table,
+    V: Sized + Send + Sync + 'static,
+{
+    type Table = T;
+    type Mechanics = PrimitiveMechanics<V>;
+}
+
+impl<T, V> PrimitiveField for Primitive<T, V>
+where
+    T: Table,
+    V: Sized + Send + Sync + 'static,
+{
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn local_id(&self) -> LocalId {
+        self.local_id
+    }
+}
+
 ///
 /// Primitive field type that is just a 'column',
 /// not a foreign reference.
 ///
-pub struct Primitive<T> {
+pub struct PrimitiveMechanics<T> {
     table: std::marker::PhantomData<T>,
 }
 
-impl<V> FieldMechanics for Primitive<V>
+impl<V> FieldMechanics for PrimitiveMechanics<V>
 where
     V: Send + Sync + 'static,
 {
@@ -82,45 +137,45 @@ where
 
 impl<F, V> ProjectAndProbe for F
 where
-    F: Field<Mechanics = Primitive<V>>,
+    F: PrimitiveField<Mechanics = PrimitiveMechanics<V>>,
 {
     fn project_and_probe(&self, probing: &Probing) -> UrmResult<()> {
         probing
             .select()
             .projection
             .lock()
-            .insert(F::local_id(), QueryField::Primitive);
+            .insert(self.local_id(), QueryField::Primitive);
         Ok(())
     }
 }
 
 /// A 'foreign' reference field that points to
 /// at most one foreign entity
-pub struct ForeignOneToOne<T: Table> {
+pub struct OneToOneMechanics<T: Table> {
     foreign: std::marker::PhantomData<T>,
 }
 
-impl<T: Table> FieldMechanics for ForeignOneToOne<T> {
+impl<T: Table> FieldMechanics for OneToOneMechanics<T> {
     type Unit = Node<T>;
     type Output = Node<T>;
 }
 
-impl<T: Table, U> ForeignMechanics<U> for ForeignOneToOne<T> {
+impl<T: Table, U> ForeignMechanics<U> for OneToOneMechanics<T> {
     type Quantify = Unit;
 }
 
 /// A 'foreign' reference field that points to
 /// potentially many foreign entities.
-pub struct ForeignOneToMany<T: Table> {
+pub struct OneToManyMechanics<T: Table> {
     foreign: std::marker::PhantomData<T>,
 }
 
-impl<T: Table> FieldMechanics for ForeignOneToMany<T> {
+impl<T: Table> FieldMechanics for OneToManyMechanics<T> {
     type Unit = Node<T>;
     type Output = Vec<Node<T>>;
 }
 
-impl<T: Table, U> ForeignMechanics<U> for ForeignOneToMany<T> {
+impl<T: Table, U> ForeignMechanics<U> for OneToManyMechanics<T> {
     type Quantify = Vector;
 }
 
@@ -214,14 +269,6 @@ pub mod probe_shim {
         type Table = F::Table;
 
         type Mechanics = ProbeMapping<Func, F::Mechanics, Out>;
-
-        fn name(&self) -> &'static str {
-            self.field.name()
-        }
-
-        fn local_id() -> LocalId {
-            F::local_id()
-        }
     }
 
     impl<'c, F, Func, InType, Out> ProjectAndProbe for ForeignProbeShim<'c, F, Func, InType, Out>
@@ -240,7 +287,10 @@ pub mod probe_shim {
             {
                 let mut proj_lock = probing.select().projection.lock();
                 proj_lock.insert(
-                    F::local_id(),
+                    // FIXME: This should be "dynamic" in some way,
+                    // or use a different type of key when projection.
+                    // perhaps keyed by the predicates..?
+                    LocalId(0),
                     QueryField::Foreign {
                         select: sub_select.clone(),
                         join_predicate: self
