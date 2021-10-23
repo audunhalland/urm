@@ -7,6 +7,7 @@ use crate::attr::foreign;
 
 pub enum Method {
     /// An associated function (without a `self`) becomes a 'selector':
+    /// TODO: Don't need this, with the Filter mechanism
     Selector,
     /// A proper method with `self` receiver becomes a Field:
     Field(Field),
@@ -307,8 +308,8 @@ pub fn gen_method(
         };
 
         quote! {
-            pub fn #method_ident(#inputs) -> ::urm::field::Primitive<#local_table_path, #value> {
-                ::urm::field::Primitive::new(
+            pub fn #method_ident(#inputs) -> ::urm::field::primitive::Primitive<#local_table_path, #value> {
+                ::urm::field::primitive::Primitive::new(
                     #field_name,
                     ::urm::field::LocalId(#field_id)
                 )
