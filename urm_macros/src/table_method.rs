@@ -174,24 +174,18 @@ pub fn gen_field_struct(
 
     let local_table_path = &impl_table.path;
 
-    let mechanics = match field
-        .meta
-        .foreign
-        .as_ref()
-        .map(|foreign| &foreign.direction)
-    {
-        None => quote_spanned! {span=> Primitive },
-        Some(foreign::Direction::SelfReferencesForeign) => {
-            quote_spanned! {span=> OneToOneMechanics }
-        }
-        Some(foreign::Direction::ForeignReferencesSelf) => {
-            quote_spanned! {span=> OneToManyMechanics }
-        }
-    };
-
     if let Some(foreign) = &field.meta.foreign {
         let span = foreign.span;
         let foreign_table_path = &foreign.foreign_table_path;
+
+        let mechanics = match foreign.direction {
+            foreign::Direction::SelfReferencesForeign => {
+                quote_spanned! {span=> OneToOneMechanics }
+            }
+            foreign::Direction::ForeignReferencesSelf => {
+                quote_spanned! {span=> OneToManyMechanics }
+            }
+        };
 
         let gen_table_column = |table_expr: proc_macro2::TokenStream,
                                 table_path: &syn::Path,
@@ -249,10 +243,10 @@ pub fn gen_field_struct(
 
             impl ::urm::field::Field for #struct_ident {
                 type Table = #local_table_path;
-                type Mechanics = ::urm::field::#mechanics<#output_type>;
+                type Mechanics = ::urm::field::foreign::#mechanics<#output_type>;
             }
 
-            impl ::urm::field::ForeignField for #struct_ident {
+            impl ::urm::field::foreign::ForeignField for #struct_ident {
                 type ForeignTable = #foreign_table_path;
 
                 fn join_predicate(
