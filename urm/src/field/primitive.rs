@@ -8,41 +8,41 @@ pub trait PrimitiveField: Field {
     fn local_id(&self) -> LocalId;
 }
 
-pub struct Primitive<T: Table, V: Sized + Send + Sync + 'static> {
+pub struct Primitive<T, O> {
     name: &'static str,
     local_id: LocalId,
     table: std::marker::PhantomData<T>,
-    value: std::marker::PhantomData<V>,
+    output: std::marker::PhantomData<O>,
 }
 
-impl<T, V> Primitive<T, V>
+impl<T, O> Primitive<T, O>
 where
     T: Table,
-    V: Sized + Send + Sync + 'static,
+    O: Sized + Send + Sync + 'static,
 {
     pub fn new(name: &'static str, local_id: LocalId) -> Self {
         Self {
             name,
             local_id,
             table: std::marker::PhantomData,
-            value: std::marker::PhantomData,
+            output: std::marker::PhantomData,
         }
     }
 }
 
-impl<T, V> Field for Primitive<T, V>
+impl<T, O> Field for Primitive<T, O>
 where
     T: Table,
-    V: Sized + Send + Sync + 'static,
+    O: Sized + Send + Sync + 'static,
 {
     type Table = T;
-    type Mechanics = PrimitiveMechanics<V>;
+    type Mechanics = PrimitiveMechanics<O>;
 }
 
-impl<T, V> PrimitiveField for Primitive<T, V>
+impl<T, O> PrimitiveField for Primitive<T, O>
 where
     T: Table,
-    V: Sized + Send + Sync + 'static,
+    O: Sized + Send + Sync + 'static,
 {
     fn name(&self) -> &'static str {
         self.name
@@ -61,12 +61,12 @@ pub struct PrimitiveMechanics<T> {
     table: std::marker::PhantomData<T>,
 }
 
-impl<V> FieldMechanics for PrimitiveMechanics<V>
+impl<O> FieldMechanics for PrimitiveMechanics<O>
 where
-    V: Send + Sync + 'static,
+    O: Send + Sync + 'static,
 {
-    type Unit = V;
-    type Output = V;
+    type Unit = O;
+    type Output = O;
 }
 
 impl<F, V> ProjectAndProbe for F

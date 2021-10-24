@@ -38,13 +38,10 @@ pub fn gen_table(table_name: syn::LitStr, impl_table: ImplTable) -> proc_macro2:
     let path = &impl_table.path;
     let mod_ident = &impl_table.mod_ident;
 
-    let field_structs = impl_table.methods.iter().map(|method| {
-        table_method::gen_field_struct(method, &impl_table)
-    });
-
-    let field_methods = impl_table.methods.iter().map(|method| {
-        table_method::gen_method(method, &impl_table)
-    });
+    let field_methods = impl_table
+        .methods
+        .iter()
+        .map(|method| table_method::gen_method(method, &impl_table));
 
     quote! {
         impl ::urm::Table for #path {
@@ -68,8 +65,6 @@ pub fn gen_table(table_name: syn::LitStr, impl_table: ImplTable) -> proc_macro2:
                     &#mod_ident::INSTANCE
                 }
             }
-
-            #(#field_structs)*
         }
     }
 }

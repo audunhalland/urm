@@ -1,6 +1,8 @@
 use urm::prelude::*;
 
 pub mod db {
+    use urm::prelude::*;
+
     pub struct Publication;
     pub struct Edition;
     pub struct Module;

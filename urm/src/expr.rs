@@ -1,16 +1,16 @@
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Predicate {
     And(Vec<Predicate>),
     Or(Vec<Predicate>),
     Eq(Expr, Expr),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Expr {
-    TableColumn(TableAlias, &'static str),
+    TableColumn(TableExpr, &'static str),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum TableExpr {
     This,
     Parent,

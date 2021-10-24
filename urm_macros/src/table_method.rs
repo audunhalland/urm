@@ -149,7 +149,7 @@ fn meta_from_attrs(attrs: Vec<syn::Attribute>) -> syn::Result<Meta> {
     Ok(meta)
 }
 
-pub fn gen_field_struct(
+pub fn gen_method(
     method: &Method,
     impl_table: &crate::table::ImplTable,
 ) -> proc_macro2::TokenStream {
@@ -158,9 +158,11 @@ pub fn gen_field_struct(
         Method::Field(field) => field,
         Method::Error(error) => return error.to_compile_error(),
     };
+    let method_ident = &field.method_ident;
+    let inputs = &field.inputs;
 
-    let span = field.span;
     let struct_ident = &field.struct_ident;
+    let local_table_path = &impl_table.path;
 
     let return_type_to_tokens = |return_type: &ReturnType| -> proc_macro2::TokenStream {
         match return_type {
@@ -171,8 +173,6 @@ pub fn gen_field_struct(
             ReturnType::Path(path) => quote! { #path },
         }
     };
-
-    let local_table_path = &impl_table.path;
 
     if let Some(foreign) = &field.meta.foreign {
         let span = foreign.span;
@@ -198,9 +198,13 @@ pub fn gen_field_struct(
         };
 
         let gen_eq_pred = |p: &foreign::ColumnEqPredicate| {
-            let local = gen_table_column(quote! { local_table }, local_table_path, &p.local_ident);
+            let local = gen_table_column(
+                quote! { ::urm::expr::TableExpr::Parent },
+                local_table_path,
+                &p.local_ident,
+            );
             let foreign = gen_table_column(
-                quote! { foreign_table },
+                quote! { ::urm::expr::TableExpr::This },
                 foreign_table_path,
                 &p.foreign_ident,
             );
@@ -236,56 +240,16 @@ pub fn gen_field_struct(
             },
         };
 
-        quote_spanned! {span=>
-            #[derive(Debug)]
-            #[allow(non_camel_case_types)]
-            pub struct #struct_ident;
-
-            impl ::urm::field::Field for #struct_ident {
-                type Table = #local_table_path;
-                type Mechanics = ::urm::field::foreign::#mechanics<#output_type>;
-            }
-
-            impl ::urm::field::foreign::ForeignField for #struct_ident {
-                type ForeignTable = #foreign_table_path;
-
-                fn join_predicate(
-                    &self,
-                    local_table: ::urm::expr::TableAlias,
-                    foreign_table: ::urm::expr::TableAlias
-                ) -> ::urm::expr::Predicate {
-                    #eq_pred
-                }
-            }
-        }
-    } else {
-        quote! {}
-    }
-}
-
-pub fn gen_method(
-    method: &Method,
-    impl_table: &crate::table::ImplTable,
-) -> proc_macro2::TokenStream {
-    let field = match method {
-        Method::Selector => return quote! {},
-        Method::Field(field) => field,
-        Method::Error(error) => return error.to_compile_error(),
-    };
-    let method_ident = &field.method_ident;
-    let inputs = &field.inputs;
-
-    let mod_ident = &impl_table.mod_ident;
-    let struct_ident = &field.struct_ident;
-
-    if let Some(_) = &field.meta.foreign {
         quote! {
-            pub fn #method_ident(#inputs) -> #mod_ident::#struct_ident {
-                #mod_ident::#struct_ident
+            pub fn #method_ident(#inputs) -> ::urm::field::foreign::Foreign<
+                #local_table_path,
+                #foreign_table_path,
+                ::urm::field::foreign::#mechanics<#output_type>
+            > {
+                urm::field::foreign::Foreign::new(#eq_pred)
             }
         }
     } else {
-        let local_table_path = &impl_table.path;
         let field_name = &field.field_name;
         let field_id = field.field_idx as u16;
 

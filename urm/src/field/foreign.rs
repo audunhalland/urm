@@ -36,8 +36,58 @@ pub trait ForeignField: Field {
 
 /// Quantification of some unit value into quantified output
 /// for the probing process
-pub trait ForeignMechanics<U>: FieldMechanics + Send + Sync + 'static {
+pub trait ForeignMechanics<U>: FieldMechanics {
     type Quantify: Quantify<U>;
+}
+
+pub struct Foreign<T1, T2, M: FieldMechanics> {
+    join_predicate: expr::Predicate,
+    source_table: std::marker::PhantomData<T1>,
+    foreign_table: std::marker::PhantomData<T2>,
+    mechanics: std::marker::PhantomData<M>,
+}
+
+impl<T1, T2, M> Foreign<T1, T2, M>
+where
+    T1: Table,
+    T2: Table,
+    M: FieldMechanics,
+{
+    pub fn new(join_predicate: expr::Predicate) -> Self {
+        Self {
+            join_predicate,
+            source_table: std::marker::PhantomData,
+            foreign_table: std::marker::PhantomData,
+            mechanics: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T1, T2, M> Field for Foreign<T1, T2, M>
+where
+    T1: Table,
+    T2: Table,
+    M: FieldMechanics,
+{
+    type Table = T1;
+    type Mechanics = M;
+}
+
+impl<T1, T2, M> ForeignField for Foreign<T1, T2, M>
+where
+    T1: Table,
+    T2: Table + Instance,
+    M: FieldMechanics,
+{
+    type ForeignTable = T2;
+
+    fn join_predicate(
+        &self,
+        local_table: expr::TableAlias,
+        foreign_table: expr::TableAlias,
+    ) -> expr::Predicate {
+        self.join_predicate.clone()
+    }
 }
 
 /// A 'foreign' reference field that points to
@@ -88,6 +138,7 @@ where
 
 impl<Func, In, Out> FieldMechanics for ProbeMapping<Func, In, Out>
 where
+    Func: Send + Sync + 'static,
     In: ForeignMechanics<Out>,
     Out: Send + Sync + 'static,
     <<In as ForeignMechanics<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,

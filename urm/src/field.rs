@@ -20,7 +20,7 @@ pub trait Field: Sized + Send + Sync {
 }
 
 /// Field mechanics
-pub trait FieldMechanics: Sized {
+pub trait FieldMechanics: Sized + Send + Sync + 'static {
     /// Unit of this field type, in case Output is quantified
     type Unit: Send + Sync + 'static;
 
