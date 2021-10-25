@@ -36,6 +36,14 @@ pub trait Instance {
     fn instance() -> &'static Self;
 }
 
+pub trait Constrain {
+    type Table: Table;
+
+    fn filter<F>(self, filter: F) -> Self
+    where
+        F: filter::Filter<Self::Table>;
+}
+
 pub struct Select<T: Table> {
     table: std::marker::PhantomData<T>,
 }
@@ -44,13 +52,6 @@ impl<T> Select<T>
 where
     T: Table + Instance,
 {
-    pub fn filter<F>(self, _filter: F) -> Self
-    where
-        F: filter::Filter<T>,
-    {
-        self
-    }
-
     /// Perform probing for the select, thus building a suitable query
     /// to send to the database.
     #[cfg(feature = "async_graphql")]
@@ -75,6 +76,20 @@ where
         let dbg = format!("{:?}", query_engine.lock());
 
         Err(UrmError::DebugSelect(dbg))
+    }
+}
+
+impl<T> Constrain for Select<T>
+where
+    T: Table,
+{
+    type Table = T;
+
+    fn filter<F>(self, _filter: F) -> Self
+    where
+        F: filter::Filter<T>,
+    {
+        self
     }
 }
 

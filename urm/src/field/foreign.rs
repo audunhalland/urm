@@ -1,7 +1,7 @@
 use super::{Field, FieldMechanics, LocalId, ProjectAndProbe};
 use crate::engine::{Probing, QueryField};
 use crate::expr;
-use crate::{Instance, Node, Table, UrmResult};
+use crate::{Constrain, Instance, Node, Table, UrmResult};
 
 /// Quantification of some unit value into quantified output
 /// for the probing process
@@ -33,13 +33,6 @@ where
         }
     }
 
-    pub fn filter<F>(self, _filter: F) -> Self
-    where
-        F: crate::filter::Filter<T2>,
-    {
-        self
-    }
-
     #[cfg(feature = "async_graphql")]
     pub fn probe_with<'c, T, Func, Out>(
         self,
@@ -53,6 +46,21 @@ where
         Out: async_graphql::ContainerType,
     {
         probe_shim::ForeignProbeShim::new(self, ProbeMechanics::new(func), ctx)
+    }
+}
+
+impl<T1, T2, M> Constrain for Foreign<T1, T2, M>
+where
+    T2: Table + Instance,
+    M: FieldMechanics,
+{
+    type Table = T2;
+
+    fn filter<F>(self, _filter: F) -> Self
+    where
+        F: crate::filter::Filter<T2>,
+    {
+        self
     }
 }
 
