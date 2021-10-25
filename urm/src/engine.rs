@@ -41,7 +41,11 @@ pub struct QueryEngine {
 }
 
 impl QueryEngine {
-    pub fn new_select(&self, from: &'static dyn Table) -> Arc<Select> {
+    pub fn new_select(
+        &self,
+        from: &'static dyn Table,
+        predicate: Option<expr::Predicate>,
+    ) -> Arc<Select> {
         Arc::new(Select {
             from: expr::TableAlias {
                 table: from,

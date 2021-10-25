@@ -3,17 +3,6 @@ use crate::engine::{Probing, QueryField};
 use crate::expr;
 use crate::{Instance, Node, Table, UrmResult};
 
-pub trait ForeignField: Field {
-    type ForeignTable: Table + Instance;
-
-    fn filter<F>(self, _filter: F) -> Self
-    where
-        F: crate::filter::Filter<Self::ForeignTable>,
-    {
-        self
-    }
-}
-
 /// Quantification of some unit value into quantified output
 /// for the probing process
 pub trait ForeignMechanics<U>: FieldMechanics {
@@ -22,6 +11,7 @@ pub trait ForeignMechanics<U>: FieldMechanics {
 
 pub struct Foreign<T1, T2, M: FieldMechanics> {
     join_predicate: expr::Predicate,
+    predicate: Option<expr::Predicate>,
     source_table: std::marker::PhantomData<T1>,
     foreign_table: std::marker::PhantomData<T2>,
     mechanics: std::marker::PhantomData<M>,
@@ -36,10 +26,18 @@ where
     pub fn new(join_predicate: expr::Predicate) -> Self {
         Self {
             join_predicate,
+            predicate: None,
             source_table: std::marker::PhantomData,
             foreign_table: std::marker::PhantomData,
             mechanics: std::marker::PhantomData,
         }
+    }
+
+    pub fn filter<F>(self, _filter: F) -> Self
+    where
+        F: crate::filter::Filter<T2>,
+    {
+        self
     }
 
     #[cfg(feature = "async_graphql")]
@@ -66,15 +64,6 @@ where
 {
     type Table = T1;
     type Mechanics = M;
-}
-
-impl<T1, T2, M> ForeignField for Foreign<T1, T2, M>
-where
-    T1: Table,
-    T2: Table + Instance,
-    M: FieldMechanics,
-{
-    type ForeignTable = T2;
 }
 
 /// A 'foreign' reference field that points to
@@ -209,7 +198,11 @@ pub mod probe_shim {
     {
         fn project_and_probe(self, probing: &Probing) -> UrmResult<()> {
             let foreign_table = T2::instance();
-            let sub_select = probing.engine().query.lock().new_select(foreign_table);
+            let sub_select = probing
+                .engine()
+                .query
+                .lock()
+                .new_select(foreign_table, self.field.predicate);
 
             {
                 let mut proj_lock = probing.select().projection.lock();
