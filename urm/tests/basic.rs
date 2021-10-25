@@ -60,7 +60,7 @@ impl Publication {
                 db::Publication.id(),
                 db::Publication
                     .editions()
-                    .filter(offset..first.or(Some(20)))
+                    .range(offset..first.or(Some(20)))
                     .probe_with(Edition, ctx),
             ),
         )
@@ -90,7 +90,7 @@ impl Query {
         &self,
         ctx: &::async_graphql::Context<'_>,
     ) -> urm::UrmResult<Vec<Edition>> {
-        urm::select().filter(0..20).probe_with(Edition, ctx).await
+        urm::select().range(0..20).probe_with(Edition, ctx).await
     }
 }
 

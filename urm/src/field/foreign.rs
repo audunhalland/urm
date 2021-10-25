@@ -1,7 +1,7 @@
 use super::{Field, FieldMechanics, LocalId, ProjectAndProbe};
 use crate::engine::{Probing, QueryField};
 use crate::expr;
-use crate::{Constrain, Instance, Node, Table, UrmResult};
+use crate::{Filter, Instance, Node, Table, UrmResult};
 
 /// Quantification of some unit value into quantified output
 /// for the probing process
@@ -49,16 +49,16 @@ where
     }
 }
 
-impl<T1, T2, M> Constrain for Foreign<T1, T2, M>
+impl<T1, T2, M> Filter for Foreign<T1, T2, M>
 where
     T2: Table + Instance,
     M: FieldMechanics,
 {
     type Table = T2;
 
-    fn filter<F>(self, _filter: F) -> Self
+    fn range<R>(self, _r: R) -> Self
     where
-        F: crate::filter::Filter<T2>,
+        R: crate::filter::Range,
     {
         self
     }
@@ -105,18 +105,22 @@ impl<T: Table, U> ForeignMechanics<U> for OneToManyMechanics<T> {
 }
 
 /// Function wrapper to map from some table node into Probe
-pub struct ProbeMechanics<Func, In, Out>(
-    Func,
-    std::marker::PhantomData<In>,
-    std::marker::PhantomData<Out>,
-);
+pub struct ProbeMechanics<Func, In, Out> {
+    func: Func,
+    in_ph: std::marker::PhantomData<In>,
+    out_ph: std::marker::PhantomData<Out>,
+}
 
 impl<Func, In, Out> ProbeMechanics<Func, In, Out>
 where
     Func: Fn(In) -> Out,
 {
     fn new(func: Func) -> Self {
-        Self(func, std::marker::PhantomData, std::marker::PhantomData)
+        Self {
+            func,
+            in_ph: std::marker::PhantomData,
+            out_ph: std::marker::PhantomData,
+        }
     }
 }
 
@@ -160,7 +164,7 @@ pub mod probe_shim {
         Out: async_graphql::ContainerType,
     > {
         field: Foreign<T1, T2, M>,
-        probe_mapping: ProbeMechanics<Func, M::Unit, Out>,
+        probe_mech: ProbeMechanics<Func, M::Unit, Out>,
         ctx: &'c ::async_graphql::context::Context<'c>,
     }
 
@@ -171,12 +175,12 @@ pub mod probe_shim {
     {
         pub fn new(
             field: Foreign<T1, T2, M>,
-            probe_mapping: ProbeMechanics<Func, M::Unit, Out>,
+            probe_mech: ProbeMechanics<Func, M::Unit, Out>,
             ctx: &'c ::async_graphql::context::Context<'c>,
         ) -> Self {
             Self {
                 field,
-                probe_mapping,
+                probe_mech,
                 ctx,
             }
         }
@@ -199,8 +203,8 @@ pub mod probe_shim {
     where
         T1: Table,
         T2: Table + Instance,
-        Func: (Fn(<M as FieldMechanics>::Unit) -> Out) + Send + Sync + 'static,
         M: FieldMechanics<Unit = Node<T2>> + ForeignMechanics<Out>,
+        Func: (Fn(<M as FieldMechanics>::Unit) -> Out) + Send + Sync + 'static,
         <<M as ForeignMechanics<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
         Out: async_graphql::ContainerType + Send + Sync + 'static,
     {
@@ -233,8 +237,8 @@ pub mod probe_shim {
                 sub_select,
             ));
 
-            let sub_probe = self.probe_mapping.0(sub_node);
-            crate::probe::probe_container(&sub_probe, self.ctx);
+            let container = (self.probe_mech.func)(sub_node);
+            crate::probe::probe_container(&container, self.ctx);
 
             Ok(())
         }

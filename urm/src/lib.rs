@@ -36,12 +36,12 @@ pub trait Instance {
     fn instance() -> &'static Self;
 }
 
-pub trait Constrain {
+pub trait Filter {
     type Table: Table;
 
-    fn filter<F>(self, filter: F) -> Self
+    fn range<R>(self, range: R) -> Self
     where
-        F: filter::Filter<Self::Table>;
+        R: filter::Range;
 }
 
 pub struct Select<T: Table> {
@@ -79,15 +79,15 @@ where
     }
 }
 
-impl<T> Constrain for Select<T>
+impl<T> Filter for Select<T>
 where
     T: Table,
 {
     type Table = T;
 
-    fn filter<F>(self, _filter: F) -> Self
+    fn range<R>(self, _r: R) -> Self
     where
-        F: filter::Filter<T>,
+        R: filter::Range,
     {
         self
     }

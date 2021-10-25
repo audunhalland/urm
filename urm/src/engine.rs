@@ -52,7 +52,7 @@ impl QueryEngine {
                 alias: 0,
             },
             projection: Mutex::new(BTreeMap::new()),
-            predicate: None,
+            predicate,
         })
     }
 
