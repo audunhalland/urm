@@ -178,7 +178,7 @@ pub trait Probe {
 pub trait MapProject<T: Table> {
     type Output;
 
-    async fn map_project(&self, node: &Node<T>) -> UrmResult<Self::Output>;
+    async fn map_project(self, node: &Node<T>) -> UrmResult<Self::Output>;
 }
 
 #[async_trait]
@@ -189,7 +189,7 @@ where
 {
     type Output = <F::Mechanics as field::FieldMechanics>::Output;
 
-    async fn map_project(&self, node: &Node<T>) -> UrmResult<Self::Output> {
+    async fn map_project(self, node: &Node<T>) -> UrmResult<Self::Output> {
         match &node.kind {
             NodeKind::Probe(probing) => {
                 self.project_and_probe(probing)?;
@@ -212,7 +212,7 @@ where
         <F1::Mechanics as field::FieldMechanics>::Output,
     );
 
-    async fn map_project(&self, node: &Node<T>) -> UrmResult<Self::Output> {
+    async fn map_project(self, node: &Node<T>) -> UrmResult<Self::Output> {
         match &node.kind {
             NodeKind::Probe(probing) => {
                 self.0.project_and_probe(probing)?;

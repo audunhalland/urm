@@ -73,7 +73,7 @@ impl<F, V> ProjectAndProbe for F
 where
     F: PrimitiveField<Mechanics = PrimitiveMechanics<V>>,
 {
-    fn project_and_probe(&self, probing: &Probing) -> UrmResult<()> {
+    fn project_and_probe(self, probing: &Probing) -> UrmResult<()> {
         probing
             .select()
             .projection

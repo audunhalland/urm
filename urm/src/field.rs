@@ -30,5 +30,5 @@ pub trait FieldMechanics: Sized + Send + Sync + 'static {
 
 /// Something that can be probe-projected directly
 pub trait ProjectAndProbe {
-    fn project_and_probe(&self, probing: &Probing) -> UrmResult<()>;
+    fn project_and_probe(self, probing: &Probing) -> UrmResult<()>;
 }

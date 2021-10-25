@@ -6,9 +6,6 @@ use crate::{Instance, Node, Table, UrmResult};
 pub trait ForeignField: Field {
     type ForeignTable: Table + Instance;
 
-    fn join_predicate(&self, local: expr::TableAlias, foreign: expr::TableAlias)
-        -> expr::Predicate;
-
     fn filter<F>(self, _filter: F) -> Self
     where
         F: crate::filter::Filter<Self::ForeignTable>,
@@ -78,14 +75,6 @@ where
     M: FieldMechanics,
 {
     type ForeignTable = T2;
-
-    fn join_predicate(
-        &self,
-        local_table: expr::TableAlias,
-        foreign_table: expr::TableAlias,
-    ) -> expr::Predicate {
-        self.join_predicate.clone()
-    }
 }
 
 /// A 'foreign' reference field that points to
@@ -218,12 +207,14 @@ pub mod probe_shim {
         <<M as ForeignMechanics<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
         Out: async_graphql::ContainerType + Send + Sync + 'static,
     {
-        fn project_and_probe(&self, probing: &Probing) -> UrmResult<()> {
+        fn project_and_probe(self, probing: &Probing) -> UrmResult<()> {
             let foreign_table = T2::instance();
             let sub_select = probing.engine().query.lock().new_select(foreign_table);
 
             {
                 let mut proj_lock = probing.select().projection.lock();
+                let join_predicate = self.field.join_predicate;
+
                 proj_lock.insert(
                     // FIXME: This should be "dynamic" in some way,
                     // or use a different type of key when projection.
@@ -231,9 +222,7 @@ pub mod probe_shim {
                     LocalId(0),
                     QueryField::Foreign {
                         select: sub_select.clone(),
-                        join_predicate: self
-                            .field
-                            .join_predicate(probing.select().from.clone(), sub_select.from.clone()),
+                        join_predicate,
                     },
                 );
             }
