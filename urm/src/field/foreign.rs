@@ -15,23 +15,6 @@ pub trait ForeignField: Field {
     {
         self
     }
-
-    /// Make a field probe-able by supplying a mapper
-    /// function and probing context
-    #[cfg(feature = "async_graphql")]
-    fn probe_with<'c, T, Func, Out>(
-        self,
-        func: Func,
-        ctx: &'c ::async_graphql::context::Context<'_>,
-    ) -> probe_shim::ForeignProbeShim<'c, Self, Func, Self::Mechanics, Out>
-    where
-        T: Table,
-        Self::Mechanics: FieldMechanics<Unit = Node<T>> + ForeignMechanics<Out>,
-        Func: Fn(<Self::Mechanics as FieldMechanics>::Unit) -> Out,
-        Out: async_graphql::ContainerType,
-    {
-        probe_shim::ForeignProbeShim::new(self, ProbeMapping::new(func), ctx)
-    }
 }
 
 /// Quantification of some unit value into quantified output
@@ -50,7 +33,7 @@ pub struct Foreign<T1, T2, M: FieldMechanics> {
 impl<T1, T2, M> Foreign<T1, T2, M>
 where
     T1: Table,
-    T2: Table,
+    T2: Table + Instance,
     M: FieldMechanics,
 {
     pub fn new(join_predicate: expr::Predicate) -> Self {
@@ -60,6 +43,21 @@ where
             foreign_table: std::marker::PhantomData,
             mechanics: std::marker::PhantomData,
         }
+    }
+
+    #[cfg(feature = "async_graphql")]
+    pub fn probe_with<'c, T, Func, Out>(
+        self,
+        func: Func,
+        ctx: &'c ::async_graphql::context::Context<'_>,
+    ) -> probe_shim::ForeignProbeShim<'c, Self, Func, M, Out>
+    where
+        T: Table,
+        M: FieldMechanics<Unit = Node<T>> + ForeignMechanics<Out>,
+        Func: Fn(<M as FieldMechanics>::Unit) -> Out,
+        Out: async_graphql::ContainerType,
+    {
+        probe_shim::ForeignProbeShim::new(self, ProbeMapping::new(func), ctx)
     }
 }
 
