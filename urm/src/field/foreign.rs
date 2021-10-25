@@ -50,14 +50,14 @@ where
         self,
         func: Func,
         ctx: &'c ::async_graphql::context::Context<'_>,
-    ) -> probe_shim::ForeignProbeShim<'c, Self, Func, M, Out>
+    ) -> probe_shim::ForeignProbeShim<'c, T1, T2, M, Func, Out>
     where
         T: Table,
         M: FieldMechanics<Unit = Node<T>> + ForeignMechanics<Out>,
         Func: Fn(<M as FieldMechanics>::Unit) -> Out,
         Out: async_graphql::ContainerType,
     {
-        probe_shim::ForeignProbeShim::new(self, ProbeMapping::new(func), ctx)
+        probe_shim::ForeignProbeShim::new(self, ProbeMechanics::new(func), ctx)
     }
 }
 
@@ -119,13 +119,13 @@ impl<T: Table, U> ForeignMechanics<U> for OneToManyMechanics<T> {
 }
 
 /// Function wrapper to map from some table node into Probe
-pub struct ProbeMapping<Func, In, Out>(
+pub struct ProbeMechanics<Func, In, Out>(
     Func,
     std::marker::PhantomData<In>,
     std::marker::PhantomData<Out>,
 );
 
-impl<Func, In, Out> ProbeMapping<Func, In, Out>
+impl<Func, In, Out> ProbeMechanics<Func, In, Out>
 where
     Func: Fn(In) -> Out,
 {
@@ -134,7 +134,7 @@ where
     }
 }
 
-impl<Func, In, Out> FieldMechanics for ProbeMapping<Func, In, Out>
+impl<Func, In, Out> FieldMechanics for ProbeMechanics<Func, In, Out>
 where
     Func: Send + Sync + 'static,
     In: ForeignMechanics<Out>,
@@ -167,25 +167,25 @@ pub mod probe_shim {
 
     pub struct ForeignProbeShim<
         'c,
-        F: ForeignField,
+        T1,
+        T2,
+        M: FieldMechanics,
         Func,
-        InType: FieldMechanics,
         Out: async_graphql::ContainerType,
     > {
-        field: F,
-        probe_mapping: ProbeMapping<Func, InType::Unit, Out>,
+        field: Foreign<T1, T2, M>,
+        probe_mapping: ProbeMechanics<Func, M::Unit, Out>,
         ctx: &'c ::async_graphql::context::Context<'c>,
     }
 
-    impl<'c, F, Func, InType, Out> ForeignProbeShim<'c, F, Func, InType, Out>
+    impl<'c, T1, T2, M, Func, Out> ForeignProbeShim<'c, T1, T2, M, Func, Out>
     where
-        F: ForeignField,
-        InType: FieldMechanics,
+        M: FieldMechanics,
         Out: async_graphql::ContainerType,
     {
         pub fn new(
-            field: F,
-            probe_mapping: ProbeMapping<Func, InType::Unit, Out>,
+            field: Foreign<T1, T2, M>,
+            probe_mapping: ProbeMechanics<Func, M::Unit, Out>,
             ctx: &'c ::async_graphql::context::Context<'c>,
         ) -> Self {
             Self {
@@ -196,32 +196,30 @@ pub mod probe_shim {
         }
     }
 
-    impl<'c, F, Func, InType, Out> Field for ForeignProbeShim<'c, F, Func, InType, Out>
+    impl<'c, T1, T2, M, Func, Out> Field for ForeignProbeShim<'c, T1, T2, M, Func, Out>
     where
-        F: ForeignField<Mechanics = InType>,
+        T1: Table,
+        T2: Table + Instance,
+        M: ForeignMechanics<Out>,
         Func: Send + Sync + 'static,
-        InType: ForeignMechanics<Out>,
-        <<InType as ForeignMechanics<Out>>::Quantify as Quantify<Out>>::Output:
-            Send + Sync + 'static,
+        <<M as ForeignMechanics<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
         Out: async_graphql::ContainerType + Send + Sync + 'static,
     {
-        // This is still the source table, not the target table (T)
-        type Table = F::Table;
-
-        type Mechanics = ProbeMapping<Func, F::Mechanics, Out>;
+        type Table = T1;
+        type Mechanics = ProbeMechanics<Func, M, Out>;
     }
 
-    impl<'c, F, Func, InType, Out> ProjectAndProbe for ForeignProbeShim<'c, F, Func, InType, Out>
+    impl<'c, T1, T2, M, Func, Out> ProjectAndProbe for ForeignProbeShim<'c, T1, T2, M, Func, Out>
     where
-        F: ForeignField<Mechanics = InType>,
-        Func: (Fn(<InType as FieldMechanics>::Unit) -> Out) + Send + Sync + 'static,
-        InType: FieldMechanics<Unit = Node<F::ForeignTable>> + ForeignMechanics<Out>,
-        <<InType as ForeignMechanics<Out>>::Quantify as Quantify<Out>>::Output:
-            Send + Sync + 'static,
+        T1: Table,
+        T2: Table + Instance,
+        Func: (Fn(<M as FieldMechanics>::Unit) -> Out) + Send + Sync + 'static,
+        M: FieldMechanics<Unit = Node<T2>> + ForeignMechanics<Out>,
+        <<M as ForeignMechanics<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
         Out: async_graphql::ContainerType + Send + Sync + 'static,
     {
         fn project_and_probe(&self, probing: &Probing) -> UrmResult<()> {
-            let foreign_table = F::ForeignTable::instance();
+            let foreign_table = T2::instance();
             let sub_select = probing.engine().query.lock().new_select(foreign_table);
 
             {
@@ -240,7 +238,7 @@ pub mod probe_shim {
                 );
             }
 
-            let sub_node = Node::<F::ForeignTable>::new_probe(crate::engine::Probing::new(
+            let sub_node = Node::<T2>::new_probe(crate::engine::Probing::new(
                 probing.engine().clone(),
                 sub_select,
             ));
