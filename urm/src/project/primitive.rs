@@ -8,41 +8,41 @@ pub trait PrimitiveField: ProjectFrom {
     fn local_id(&self) -> LocalId;
 }
 
-pub struct Primitive<T, O> {
+pub struct Primitive<T, Out> {
     name: &'static str,
     local_id: LocalId,
     table: std::marker::PhantomData<T>,
-    output: std::marker::PhantomData<O>,
+    out: std::marker::PhantomData<Out>,
 }
 
-impl<T, O> Primitive<T, O>
+impl<T, Out> Primitive<T, Out>
 where
     T: Table,
-    O: Sized + Send + Sync + 'static,
+    Out: Sized + Send + Sync + 'static,
 {
     pub fn new(name: &'static str, local_id: LocalId) -> Self {
         Self {
             name,
             local_id,
             table: std::marker::PhantomData,
-            output: std::marker::PhantomData,
+            out: std::marker::PhantomData,
         }
     }
 }
 
-impl<T, O> ProjectFrom for Primitive<T, O>
+impl<T, Out> ProjectFrom for Primitive<T, Out>
 where
     T: Table,
-    O: Sized + Send + Sync + 'static,
+    Out: Sized + Send + Sync + 'static,
 {
     type Table = T;
-    type Outcome = PrimitiveOutcome<O>;
+    type Outcome = PrimitiveOutcome<Out>;
 }
 
-impl<T, O> PrimitiveField for Primitive<T, O>
+impl<T, Out> PrimitiveField for Primitive<T, Out>
 where
     T: Table,
-    O: Sized + Send + Sync + 'static,
+    Out: Sized + Send + Sync + 'static,
 {
     fn name(&self) -> &'static str {
         self.name
@@ -57,21 +57,21 @@ where
 /// Primitive field type that is just a 'column',
 /// not a foreign reference.
 ///
-pub struct PrimitiveOutcome<T> {
-    table: std::marker::PhantomData<T>,
+pub struct PrimitiveOutcome<Out> {
+    out: std::marker::PhantomData<Out>,
 }
 
-impl<O> Outcome for PrimitiveOutcome<O>
+impl<Out> Outcome for PrimitiveOutcome<Out>
 where
-    O: Send + Sync + 'static,
+    Out: Send + Sync + 'static,
 {
-    type Unit = O;
-    type Output = O;
+    type Unit = Out;
+    type Output = Out;
 }
 
-impl<F, V> ProjectAndProbe for F
+impl<F, Out> ProjectAndProbe for F
 where
-    F: PrimitiveField<Outcome = PrimitiveOutcome<V>>,
+    F: PrimitiveField<Outcome = PrimitiveOutcome<Out>>,
 {
     fn project_and_probe(self, probing: &Probing) -> UrmResult<()> {
         probing

@@ -4,24 +4,29 @@ use crate::expr;
 use crate::{Filter, Instance, Node, Table, UrmResult};
 
 /// Quantification of some unit value into quantified output
-/// for the probing process
+/// for the probing process.
 pub trait ForeignOutcome<U>: Outcome {
     type Quantify: Quantify<U>;
 }
 
-pub struct Foreign<T1, T2, M: Outcome> {
+///
+/// A projection using a _foreign key_, leading into a foreign table.
+///
+///
+///
+pub struct Foreign<T1, T2, O: Outcome> {
     join_predicate: expr::Predicate,
     predicate: Option<expr::Predicate>,
     source_table: std::marker::PhantomData<T1>,
     foreign_table: std::marker::PhantomData<T2>,
-    outcome: std::marker::PhantomData<M>,
+    outcome: std::marker::PhantomData<O>,
 }
 
-impl<T1, T2, M> Foreign<T1, T2, M>
+impl<T1, T2, O> Foreign<T1, T2, O>
 where
     T1: Table,
     T2: Table + Instance,
-    M: Outcome,
+    O: Outcome,
 {
     pub fn new(join_predicate: expr::Predicate) -> Self {
         Self {
@@ -34,25 +39,25 @@ where
     }
 
     #[cfg(feature = "async_graphql")]
-    pub fn probe_with<'c, T, Func, Out>(
+    pub fn probe_with<'c, T, Func, OutUnit>(
         self,
         func: Func,
         ctx: &'c ::async_graphql::context::Context<'_>,
-    ) -> probe_shim::ForeignProbeShim<'c, T1, T2, M, Func, Out>
+    ) -> probe_shim::ForeignProbeShim<'c, T1, T2, O, Func, OutUnit>
     where
         T: Table,
-        M: Outcome<Unit = Node<T>> + ForeignOutcome<Out>,
-        Func: Fn(<M as Outcome>::Unit) -> Out,
-        Out: async_graphql::ContainerType,
+        O: Outcome<Unit = Node<T>> + ForeignOutcome<OutUnit>,
+        Func: Fn(<O as Outcome>::Unit) -> OutUnit,
+        OutUnit: async_graphql::ContainerType,
     {
         probe_shim::ForeignProbeShim::new(self, ProbeOutcome::new(func), ctx)
     }
 }
 
-impl<T1, T2, M> Filter for Foreign<T1, T2, M>
+impl<T1, T2, O> Filter for Foreign<T1, T2, O>
 where
     T2: Table + Instance,
-    M: Outcome,
+    O: Outcome,
 {
     type Table = T2;
 
@@ -64,14 +69,14 @@ where
     }
 }
 
-impl<T1, T2, M> ProjectFrom for Foreign<T1, T2, M>
+impl<T1, T2, O> ProjectFrom for Foreign<T1, T2, O>
 where
     T1: Table,
     T2: Table,
-    M: Outcome,
+    O: Outcome,
 {
     type Table = T1;
-    type Outcome = M;
+    type Outcome = O;
 }
 
 /// A 'foreign' reference field that points to
@@ -105,34 +110,34 @@ impl<T: Table, U> ForeignOutcome<U> for OneToMany<T> {
 }
 
 /// Function wrapper to map from some table node into Probe
-pub struct ProbeOutcome<Func, In, Out> {
+pub struct ProbeOutcome<Func, In, OutUnit> {
     func: Func,
     in_ph: std::marker::PhantomData<In>,
-    out_ph: std::marker::PhantomData<Out>,
+    out_unit_ph: std::marker::PhantomData<OutUnit>,
 }
 
-impl<Func, In, Out> ProbeOutcome<Func, In, Out>
+impl<Func, In, OutUnit> ProbeOutcome<Func, In, OutUnit>
 where
-    Func: Fn(In) -> Out,
+    Func: Fn(In) -> OutUnit,
 {
     fn new(func: Func) -> Self {
         Self {
             func,
             in_ph: std::marker::PhantomData,
-            out_ph: std::marker::PhantomData,
+            out_unit_ph: std::marker::PhantomData,
         }
     }
 }
 
-impl<Func, In, Out> Outcome for ProbeOutcome<Func, In, Out>
+impl<Func, In, OutUnit> Outcome for ProbeOutcome<Func, In, OutUnit>
 where
     Func: Send + Sync + 'static,
-    In: ForeignOutcome<Out>,
-    Out: Send + Sync + 'static,
-    <<In as ForeignOutcome<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
+    In: ForeignOutcome<OutUnit>,
+    OutUnit: Send + Sync + 'static,
+    <<In as ForeignOutcome<OutUnit>>::Quantify as Quantify<OutUnit>>::Output: Send + Sync + 'static,
 {
-    type Unit = Out;
-    type Output = <In::Quantify as Quantify<Out>>::Output;
+    type Unit = OutUnit;
+    type Output = <In::Quantify as Quantify<OutUnit>>::Output;
 }
 
 /// Quantify some unit.
@@ -155,20 +160,20 @@ impl<U> Quantify<U> for Vector {
 pub mod probe_shim {
     use super::*;
 
-    pub struct ForeignProbeShim<'c, T1, T2, M: Outcome, Func, Out: async_graphql::ContainerType> {
-        field: Foreign<T1, T2, M>,
-        probe_mech: ProbeOutcome<Func, M::Unit, Out>,
+    pub struct ForeignProbeShim<'c, T1, T2, O: Outcome, Func, OutUnit: async_graphql::ContainerType> {
+        field: Foreign<T1, T2, O>,
+        probe_mech: ProbeOutcome<Func, O::Unit, OutUnit>,
         ctx: &'c ::async_graphql::context::Context<'c>,
     }
 
-    impl<'c, T1, T2, M, Func, Out> ForeignProbeShim<'c, T1, T2, M, Func, Out>
+    impl<'c, T1, T2, O, Func, OutUnit> ForeignProbeShim<'c, T1, T2, O, Func, OutUnit>
     where
-        M: Outcome,
-        Out: async_graphql::ContainerType,
+        O: Outcome,
+        OutUnit: async_graphql::ContainerType,
     {
         pub fn new(
-            field: Foreign<T1, T2, M>,
-            probe_mech: ProbeOutcome<Func, M::Unit, Out>,
+            field: Foreign<T1, T2, O>,
+            probe_mech: ProbeOutcome<Func, O::Unit, OutUnit>,
             ctx: &'c ::async_graphql::context::Context<'c>,
         ) -> Self {
             Self {
@@ -179,27 +184,30 @@ pub mod probe_shim {
         }
     }
 
-    impl<'c, T1, T2, M, Func, Out> ProjectFrom for ForeignProbeShim<'c, T1, T2, M, Func, Out>
+    impl<'c, T1, T2, O, Func, OutUnit> ProjectFrom for ForeignProbeShim<'c, T1, T2, O, Func, OutUnit>
     where
         T1: Table,
         T2: Table + Instance,
-        M: ForeignOutcome<Out>,
+        O: ForeignOutcome<OutUnit>,
         Func: Send + Sync + 'static,
-        <<M as ForeignOutcome<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
-        Out: async_graphql::ContainerType + Send + Sync + 'static,
+        <<O as ForeignOutcome<OutUnit>>::Quantify as Quantify<OutUnit>>::Output:
+            Send + Sync + 'static,
+        OutUnit: async_graphql::ContainerType + Send + Sync + 'static,
     {
         type Table = T1;
-        type Outcome = ProbeOutcome<Func, M, Out>;
+        type Outcome = ProbeOutcome<Func, O, OutUnit>;
     }
 
-    impl<'c, T1, T2, M, Func, Out> ProjectAndProbe for ForeignProbeShim<'c, T1, T2, M, Func, Out>
+    impl<'c, T1, T2, O, Func, OutUnit> ProjectAndProbe
+        for ForeignProbeShim<'c, T1, T2, O, Func, OutUnit>
     where
         T1: Table,
         T2: Table + Instance,
-        M: Outcome<Unit = Node<T2>> + ForeignOutcome<Out>,
-        Func: (Fn(<M as Outcome>::Unit) -> Out) + Send + Sync + 'static,
-        <<M as ForeignOutcome<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
-        Out: async_graphql::ContainerType + Send + Sync + 'static,
+        O: Outcome<Unit = Node<T2>> + ForeignOutcome<OutUnit>,
+        Func: (Fn(<O as Outcome>::Unit) -> OutUnit) + Send + Sync + 'static,
+        <<O as ForeignOutcome<OutUnit>>::Quantify as Quantify<OutUnit>>::Output:
+            Send + Sync + 'static,
+        OutUnit: async_graphql::ContainerType + Send + Sync + 'static,
     {
         fn project_and_probe(self, probing: &Probing) -> UrmResult<()> {
             let foreign_table = T2::instance();

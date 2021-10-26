@@ -11,6 +11,8 @@ pub struct LocalId(pub u16);
 ///
 /// Types starting out as projection builders implement this trait.
 ///
+/// To "project" usually means selecting specific columns from a table.
+///
 pub trait ProjectFrom: Sized + Send + Sync {
     /// The table projected from
     type Table: Table;
