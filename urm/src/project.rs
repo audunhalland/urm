@@ -7,27 +7,32 @@ pub mod primitive;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct LocalId(pub u16);
 
+/// # ProjectFrom
 ///
-/// Anything that can be projected
+/// Types starting out as projection builders implement this trait.
 ///
-pub trait Projectable: Sized + Send + Sync {
+pub trait ProjectFrom: Sized + Send + Sync {
     /// The table projected from
     type Table: Table;
 
-    /// The mechanics which determines the complexity of the projection
-    type Mechanics: ProjectionMechanics;
+    /// Outcome/value produced by the projection
+    type Outcome: Outcome;
 }
 
-/// Field mechanics
-pub trait ProjectionMechanics: Sized + Send + Sync + 'static {
-    /// Unit of this field type, in case Output is quantified
+/// # Projection outcome
+///
+/// Represents the produced value of a projection.
+pub trait Outcome: Sized + Send + Sync + 'static {
+    /// Unit (unquantified) output of this outcome
     type Unit: Send + Sync + 'static;
 
-    /// Final, quantified value of the field (possibly Vec<Self::Unit>).
+    /// Final, quantified output of this outcome (possibly Vec<Self::Unit> or some other collection).
     type Output: Send + Sync + 'static;
 }
 
-/// Something that can be probe-projected directly
+/// # ProjectAndProbe
+///
+/// Any type representing a fully built projection must implement this trait.
 pub trait ProjectAndProbe {
     fn project_and_probe(self, probing: &Probing) -> UrmResult<()>;
 }

@@ -200,9 +200,9 @@ pub trait MapProject<T: Table> {
 impl<T, F> MapProject<T> for F
 where
     T: Table,
-    F: project::Projectable<Table = T> + project::ProjectAndProbe,
+    F: project::ProjectFrom<Table = T> + project::ProjectAndProbe,
 {
-    type Output = <F::Mechanics as project::ProjectionMechanics>::Output;
+    type Output = <F::Outcome as project::Outcome>::Output;
 
     async fn map_project(self, node: &Node<T>) -> UrmResult<Self::Output> {
         match &node.kind {
@@ -219,12 +219,12 @@ where
 impl<T, F0, F1> MapProject<T> for (F0, F1)
 where
     T: Table,
-    F0: project::Projectable<Table = T> + project::ProjectAndProbe,
-    F1: project::Projectable<Table = T> + project::ProjectAndProbe,
+    F0: project::ProjectFrom<Table = T> + project::ProjectAndProbe,
+    F1: project::ProjectFrom<Table = T> + project::ProjectAndProbe,
 {
     type Output = (
-        <F0::Mechanics as project::ProjectionMechanics>::Output,
-        <F1::Mechanics as project::ProjectionMechanics>::Output,
+        <F0::Outcome as project::Outcome>::Output,
+        <F1::Outcome as project::Outcome>::Output,
     );
 
     async fn map_project(self, node: &Node<T>) -> UrmResult<Self::Output> {

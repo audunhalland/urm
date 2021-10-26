@@ -178,12 +178,12 @@ pub fn gen_method(
         let span = foreign.span;
         let foreign_table_path = &foreign.foreign_table_path;
 
-        let mechanics = match foreign.direction {
+        let outcome = match foreign.direction {
             foreign::Direction::SelfReferencesForeign => {
-                quote_spanned! {span=> OneToOneMechanics }
+                quote_spanned! {span=> OneToOne }
             }
             foreign::Direction::ForeignReferencesSelf => {
-                quote_spanned! {span=> OneToManyMechanics }
+                quote_spanned! {span=> OneToMany }
             }
         };
 
@@ -244,7 +244,7 @@ pub fn gen_method(
             pub fn #method_ident(#inputs) -> ::urm::project::foreign::Foreign<
                 #local_table_path,
                 #foreign_table_path,
-                ::urm::project::foreign::#mechanics<#output_type>
+                ::urm::project::foreign::#outcome<#output_type>
             > {
                 urm::project::foreign::Foreign::new(#eq_pred)
             }

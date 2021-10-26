@@ -1,27 +1,27 @@
-use super::{LocalId, ProjectAndProbe, Projectable, ProjectionMechanics};
+use super::{LocalId, Outcome, ProjectAndProbe, ProjectFrom};
 use crate::engine::{Probing, QueryField};
 use crate::expr;
 use crate::{Filter, Instance, Node, Table, UrmResult};
 
 /// Quantification of some unit value into quantified output
 /// for the probing process
-pub trait ForeignMechanics<U>: ProjectionMechanics {
+pub trait ForeignOutcome<U>: Outcome {
     type Quantify: Quantify<U>;
 }
 
-pub struct Foreign<T1, T2, M: ProjectionMechanics> {
+pub struct Foreign<T1, T2, M: Outcome> {
     join_predicate: expr::Predicate,
     predicate: Option<expr::Predicate>,
     source_table: std::marker::PhantomData<T1>,
     foreign_table: std::marker::PhantomData<T2>,
-    mechanics: std::marker::PhantomData<M>,
+    outcome: std::marker::PhantomData<M>,
 }
 
 impl<T1, T2, M> Foreign<T1, T2, M>
 where
     T1: Table,
     T2: Table + Instance,
-    M: ProjectionMechanics,
+    M: Outcome,
 {
     pub fn new(join_predicate: expr::Predicate) -> Self {
         Self {
@@ -29,7 +29,7 @@ where
             predicate: None,
             source_table: std::marker::PhantomData,
             foreign_table: std::marker::PhantomData,
-            mechanics: std::marker::PhantomData,
+            outcome: std::marker::PhantomData,
         }
     }
 
@@ -41,18 +41,18 @@ where
     ) -> probe_shim::ForeignProbeShim<'c, T1, T2, M, Func, Out>
     where
         T: Table,
-        M: ProjectionMechanics<Unit = Node<T>> + ForeignMechanics<Out>,
-        Func: Fn(<M as ProjectionMechanics>::Unit) -> Out,
+        M: Outcome<Unit = Node<T>> + ForeignOutcome<Out>,
+        Func: Fn(<M as Outcome>::Unit) -> Out,
         Out: async_graphql::ContainerType,
     {
-        probe_shim::ForeignProbeShim::new(self, ProbeMechanics::new(func), ctx)
+        probe_shim::ForeignProbeShim::new(self, ProbeOutcome::new(func), ctx)
     }
 }
 
 impl<T1, T2, M> Filter for Foreign<T1, T2, M>
 where
     T2: Table + Instance,
-    M: ProjectionMechanics,
+    M: Outcome,
 {
     type Table = T2;
 
@@ -64,54 +64,54 @@ where
     }
 }
 
-impl<T1, T2, M> Projectable for Foreign<T1, T2, M>
+impl<T1, T2, M> ProjectFrom for Foreign<T1, T2, M>
 where
     T1: Table,
     T2: Table,
-    M: ProjectionMechanics,
+    M: Outcome,
 {
     type Table = T1;
-    type Mechanics = M;
+    type Outcome = M;
 }
 
 /// A 'foreign' reference field that points to
 /// at most one foreign entity
-pub struct OneToOneMechanics<T: Table> {
+pub struct OneToOne<T: Table> {
     foreign: std::marker::PhantomData<T>,
 }
 
-impl<T: Table> ProjectionMechanics for OneToOneMechanics<T> {
+impl<T: Table> Outcome for OneToOne<T> {
     type Unit = Node<T>;
     type Output = Node<T>;
 }
 
-impl<T: Table, U> ForeignMechanics<U> for OneToOneMechanics<T> {
+impl<T: Table, U> ForeignOutcome<U> for OneToOne<T> {
     type Quantify = Unit;
 }
 
 /// A 'foreign' reference field that points to
 /// potentially many foreign entities.
-pub struct OneToManyMechanics<T: Table> {
+pub struct OneToMany<T: Table> {
     foreign: std::marker::PhantomData<T>,
 }
 
-impl<T: Table> ProjectionMechanics for OneToManyMechanics<T> {
+impl<T: Table> Outcome for OneToMany<T> {
     type Unit = Node<T>;
     type Output = Vec<Node<T>>;
 }
 
-impl<T: Table, U> ForeignMechanics<U> for OneToManyMechanics<T> {
+impl<T: Table, U> ForeignOutcome<U> for OneToMany<T> {
     type Quantify = Vector;
 }
 
 /// Function wrapper to map from some table node into Probe
-pub struct ProbeMechanics<Func, In, Out> {
+pub struct ProbeOutcome<Func, In, Out> {
     func: Func,
     in_ph: std::marker::PhantomData<In>,
     out_ph: std::marker::PhantomData<Out>,
 }
 
-impl<Func, In, Out> ProbeMechanics<Func, In, Out>
+impl<Func, In, Out> ProbeOutcome<Func, In, Out>
 where
     Func: Fn(In) -> Out,
 {
@@ -124,12 +124,12 @@ where
     }
 }
 
-impl<Func, In, Out> ProjectionMechanics for ProbeMechanics<Func, In, Out>
+impl<Func, In, Out> Outcome for ProbeOutcome<Func, In, Out>
 where
     Func: Send + Sync + 'static,
-    In: ForeignMechanics<Out>,
+    In: ForeignOutcome<Out>,
     Out: Send + Sync + 'static,
-    <<In as ForeignMechanics<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
+    <<In as ForeignOutcome<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
 {
     type Unit = Out;
     type Output = <In::Quantify as Quantify<Out>>::Output;
@@ -155,27 +155,20 @@ impl<U> Quantify<U> for Vector {
 pub mod probe_shim {
     use super::*;
 
-    pub struct ForeignProbeShim<
-        'c,
-        T1,
-        T2,
-        M: ProjectionMechanics,
-        Func,
-        Out: async_graphql::ContainerType,
-    > {
+    pub struct ForeignProbeShim<'c, T1, T2, M: Outcome, Func, Out: async_graphql::ContainerType> {
         field: Foreign<T1, T2, M>,
-        probe_mech: ProbeMechanics<Func, M::Unit, Out>,
+        probe_mech: ProbeOutcome<Func, M::Unit, Out>,
         ctx: &'c ::async_graphql::context::Context<'c>,
     }
 
     impl<'c, T1, T2, M, Func, Out> ForeignProbeShim<'c, T1, T2, M, Func, Out>
     where
-        M: ProjectionMechanics,
+        M: Outcome,
         Out: async_graphql::ContainerType,
     {
         pub fn new(
             field: Foreign<T1, T2, M>,
-            probe_mech: ProbeMechanics<Func, M::Unit, Out>,
+            probe_mech: ProbeOutcome<Func, M::Unit, Out>,
             ctx: &'c ::async_graphql::context::Context<'c>,
         ) -> Self {
             Self {
@@ -186,26 +179,26 @@ pub mod probe_shim {
         }
     }
 
-    impl<'c, T1, T2, M, Func, Out> Projectable for ForeignProbeShim<'c, T1, T2, M, Func, Out>
+    impl<'c, T1, T2, M, Func, Out> ProjectFrom for ForeignProbeShim<'c, T1, T2, M, Func, Out>
     where
         T1: Table,
         T2: Table + Instance,
-        M: ForeignMechanics<Out>,
+        M: ForeignOutcome<Out>,
         Func: Send + Sync + 'static,
-        <<M as ForeignMechanics<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
+        <<M as ForeignOutcome<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
         Out: async_graphql::ContainerType + Send + Sync + 'static,
     {
         type Table = T1;
-        type Mechanics = ProbeMechanics<Func, M, Out>;
+        type Outcome = ProbeOutcome<Func, M, Out>;
     }
 
     impl<'c, T1, T2, M, Func, Out> ProjectAndProbe for ForeignProbeShim<'c, T1, T2, M, Func, Out>
     where
         T1: Table,
         T2: Table + Instance,
-        M: ProjectionMechanics<Unit = Node<T2>> + ForeignMechanics<Out>,
-        Func: (Fn(<M as ProjectionMechanics>::Unit) -> Out) + Send + Sync + 'static,
-        <<M as ForeignMechanics<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
+        M: Outcome<Unit = Node<T2>> + ForeignOutcome<Out>,
+        Func: (Fn(<M as Outcome>::Unit) -> Out) + Send + Sync + 'static,
+        <<M as ForeignOutcome<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
         Out: async_graphql::ContainerType + Send + Sync + 'static,
     {
         fn project_and_probe(self, probing: &Probing) -> UrmResult<()> {
