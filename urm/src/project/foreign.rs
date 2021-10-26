@@ -3,9 +3,9 @@ use crate::engine::{Probing, QueryField};
 use crate::expr;
 use crate::{Filter, Instance, Node, Table, UrmResult};
 
-/// Quantification of some unit value into quantified output
-/// for the probing process.
-pub trait ForeignOutcome<U>: Outcome {
+/// 'FlatMap' some outcome into type `U`
+/// with desired quantification
+pub trait FlatMapOutcome<U>: Outcome {
     type Quantify: Quantify<U>;
 }
 
@@ -38,19 +38,23 @@ where
         }
     }
 
+    ///
+    /// Probe this foreign, effectively mapping the original
+    /// outcome type to the probe-able outcome type `P`.
+    ///
     #[cfg(feature = "async_graphql")]
-    pub fn probe_with<'c, T, Func, OutUnit>(
+    pub fn probe_with<'c, T, F, P>(
         self,
-        func: Func,
+        func: F,
         ctx: &'c ::async_graphql::context::Context<'_>,
-    ) -> probe_shim::ForeignProbeShim<'c, T1, T2, O, Func, OutUnit>
+    ) -> probe_async_graphql::ForeignProbe<'c, T1, T2, O, F, P>
     where
         T: Table,
-        O: Outcome<Unit = Node<T>> + ForeignOutcome<OutUnit>,
-        Func: Fn(<O as Outcome>::Unit) -> OutUnit,
-        OutUnit: async_graphql::ContainerType,
+        O: Outcome<Unit = Node<T>> + FlatMapOutcome<P>,
+        F: Fn(<O as Outcome>::Unit) -> P,
+        P: async_graphql::ContainerType,
     {
-        probe_shim::ForeignProbeShim::new(self, ProbeOutcome::new(func), ctx)
+        probe_async_graphql::ForeignProbe::new(self, MapToProbe::new(func), ctx)
     }
 }
 
@@ -90,7 +94,7 @@ impl<T: Table> Outcome for OneToOne<T> {
     type Output = Node<T>;
 }
 
-impl<T: Table, U> ForeignOutcome<U> for OneToOne<T> {
+impl<T: Table, U> FlatMapOutcome<U> for OneToOne<T> {
     type Quantify = Unit;
 }
 
@@ -105,39 +109,37 @@ impl<T: Table> Outcome for OneToMany<T> {
     type Output = Vec<Node<T>>;
 }
 
-impl<T: Table, U> ForeignOutcome<U> for OneToMany<T> {
+impl<T: Table, U> FlatMapOutcome<U> for OneToMany<T> {
     type Quantify = Vector;
 }
 
-/// Function wrapper to map from some table node into Probe
-pub struct ProbeOutcome<Func, In, OutUnit> {
-    func: Func,
-    in_ph: std::marker::PhantomData<In>,
-    out_unit_ph: std::marker::PhantomData<OutUnit>,
+/// Function wrapper to map from some table node unit `N` into probe `P`,
+/// also acting as the Outcome type for this mapping.
+pub struct MapToProbe<F, N, P> {
+    func: F,
+    node_unit: std::marker::PhantomData<N>,
+    probe: std::marker::PhantomData<P>,
 }
 
-impl<Func, In, OutUnit> ProbeOutcome<Func, In, OutUnit>
-where
-    Func: Fn(In) -> OutUnit,
-{
-    fn new(func: Func) -> Self {
+impl<F, N, P> MapToProbe<F, N, P> {
+    fn new(func: F) -> Self {
         Self {
             func,
-            in_ph: std::marker::PhantomData,
-            out_unit_ph: std::marker::PhantomData,
+            node_unit: std::marker::PhantomData,
+            probe: std::marker::PhantomData,
         }
     }
 }
 
-impl<Func, In, OutUnit> Outcome for ProbeOutcome<Func, In, OutUnit>
+impl<F, N, P> Outcome for MapToProbe<F, N, P>
 where
-    Func: Send + Sync + 'static,
-    In: ForeignOutcome<OutUnit>,
-    OutUnit: Send + Sync + 'static,
-    <<In as ForeignOutcome<OutUnit>>::Quantify as Quantify<OutUnit>>::Output: Send + Sync + 'static,
+    F: Send + Sync + 'static,
+    N: FlatMapOutcome<P>,
+    P: Send + Sync + 'static,
+    <<N as FlatMapOutcome<P>>::Quantify as Quantify<P>>::Output: Send + Sync + 'static,
 {
-    type Unit = OutUnit;
-    type Output = <In::Quantify as Quantify<OutUnit>>::Output;
+    type Unit = P;
+    type Output = <N::Quantify as Quantify<P>>::Output;
 }
 
 /// Quantify some unit.
@@ -157,57 +159,63 @@ impl<U> Quantify<U> for Vector {
 }
 
 #[cfg(feature = "async_graphql")]
-pub mod probe_shim {
+pub mod probe_async_graphql {
     use super::*;
 
-    pub struct ForeignProbeShim<'c, T1, T2, O: Outcome, Func, OutUnit: async_graphql::ContainerType> {
-        field: Foreign<T1, T2, O>,
-        probe_mech: ProbeOutcome<Func, O::Unit, OutUnit>,
+    ///
+    /// A foreign projection mapped into a probe-able `async_graphql::ContainerType`.
+    ///
+    /// `T1` is the source table.
+    /// `T2` is the target table.
+    /// `O` is the original outcome.
+    /// `F` is a function that maps to the probe type.
+    /// `P` _is_ the probe type, the `ContainerType`.
+    ///
+    pub struct ForeignProbe<'c, T1, T2, O: Outcome, F, P: async_graphql::ContainerType> {
+        foreign: Foreign<T1, T2, O>,
+        map_to_probe: MapToProbe<F, O::Unit, P>,
         ctx: &'c ::async_graphql::context::Context<'c>,
     }
 
-    impl<'c, T1, T2, O, Func, OutUnit> ForeignProbeShim<'c, T1, T2, O, Func, OutUnit>
+    impl<'c, T1, T2, O, F, P> ForeignProbe<'c, T1, T2, O, F, P>
     where
         O: Outcome,
-        OutUnit: async_graphql::ContainerType,
+        P: async_graphql::ContainerType,
     {
         pub fn new(
-            field: Foreign<T1, T2, O>,
-            probe_mech: ProbeOutcome<Func, O::Unit, OutUnit>,
+            foreign: Foreign<T1, T2, O>,
+            map_to_probe: MapToProbe<F, O::Unit, P>,
             ctx: &'c ::async_graphql::context::Context<'c>,
         ) -> Self {
             Self {
-                field,
-                probe_mech,
+                foreign,
+                map_to_probe,
                 ctx,
             }
         }
     }
 
-    impl<'c, T1, T2, O, Func, OutUnit> ProjectFrom for ForeignProbeShim<'c, T1, T2, O, Func, OutUnit>
+    impl<'c, T1, T2, O, F, P> ProjectFrom for ForeignProbe<'c, T1, T2, O, F, P>
     where
         T1: Table,
         T2: Table + Instance,
-        O: ForeignOutcome<OutUnit>,
-        Func: Send + Sync + 'static,
-        <<O as ForeignOutcome<OutUnit>>::Quantify as Quantify<OutUnit>>::Output:
-            Send + Sync + 'static,
-        OutUnit: async_graphql::ContainerType + Send + Sync + 'static,
+        O: FlatMapOutcome<P>,
+        F: Send + Sync + 'static,
+        <<O as FlatMapOutcome<P>>::Quantify as Quantify<P>>::Output: Send + Sync + 'static,
+        P: async_graphql::ContainerType + Send + Sync + 'static,
     {
         type Table = T1;
-        type Outcome = ProbeOutcome<Func, O, OutUnit>;
+        type Outcome = MapToProbe<F, O, P>;
     }
 
-    impl<'c, T1, T2, O, Func, OutUnit> ProjectAndProbe
-        for ForeignProbeShim<'c, T1, T2, O, Func, OutUnit>
+    impl<'c, T1, T2, O, F, P> ProjectAndProbe for ForeignProbe<'c, T1, T2, O, F, P>
     where
         T1: Table,
         T2: Table + Instance,
-        O: Outcome<Unit = Node<T2>> + ForeignOutcome<OutUnit>,
-        Func: (Fn(<O as Outcome>::Unit) -> OutUnit) + Send + Sync + 'static,
-        <<O as ForeignOutcome<OutUnit>>::Quantify as Quantify<OutUnit>>::Output:
-            Send + Sync + 'static,
-        OutUnit: async_graphql::ContainerType + Send + Sync + 'static,
+        O: Outcome<Unit = Node<T2>> + FlatMapOutcome<P>,
+        F: (Fn(<O as Outcome>::Unit) -> P) + Send + Sync + 'static,
+        <<O as FlatMapOutcome<P>>::Quantify as Quantify<P>>::Output: Send + Sync + 'static,
+        P: async_graphql::ContainerType + Send + Sync + 'static,
     {
         fn project_and_probe(self, probing: &Probing) -> UrmResult<()> {
             let foreign_table = T2::instance();
@@ -215,11 +223,11 @@ pub mod probe_shim {
                 .engine()
                 .query
                 .lock()
-                .new_select(foreign_table, self.field.predicate);
+                .new_select(foreign_table, self.foreign.predicate);
 
             {
                 let mut proj_lock = probing.select().projection.lock();
-                let join_predicate = self.field.join_predicate;
+                let join_predicate = self.foreign.join_predicate;
 
                 proj_lock.insert(
                     // FIXME: This should be "dynamic" in some way,
@@ -238,7 +246,7 @@ pub mod probe_shim {
                 sub_select,
             ));
 
-            let container = (self.probe_mech.func)(sub_node);
+            let container = (self.map_to_probe.func)(sub_node);
             crate::probe::probe_container(&container, self.ctx);
 
             Ok(())
