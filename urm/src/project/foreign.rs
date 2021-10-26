@@ -1,10 +1,16 @@
+//!
+//! Foreign projection.
+//!
+
 use super::{LocalId, Outcome, ProjectAndProbe, ProjectFrom};
 use crate::engine::{Probing, QueryField};
 use crate::expr;
+use crate::quantify;
+use crate::quantify::Quantify;
 use crate::{Filter, Instance, Node, Table, UrmResult};
 
-/// 'FlatMap' some outcome into type `U`
-/// with desired quantification
+/// 'FlatMap' some Outcome into the type `U`
+/// having the desired quantification.
 pub trait FlatMapOutcome<U>: Outcome {
     type Quantify: Quantify<U>;
 }
@@ -12,7 +18,9 @@ pub trait FlatMapOutcome<U>: Outcome {
 ///
 /// A projection using a _foreign key_, leading into a foreign table.
 ///
-///
+/// `T1` is the outer table.
+/// `T2` is the inner table.
+/// `O` is the original outcome of the mapping (having Unit type `Node<T2>` for probing to work).
 ///
 pub struct Foreign<T1, T2, O: Outcome> {
     join_predicate: expr::Predicate,
@@ -39,18 +47,17 @@ where
     }
 
     ///
-    /// Probe this foreign, effectively mapping the original
+    /// Probe this Foreign, effectively mapping the original
     /// outcome type to the probe-able outcome type `P`.
     ///
     #[cfg(feature = "async_graphql")]
-    pub fn probe_with<'c, T, F, P>(
+    pub fn probe_with<'c, F, P>(
         self,
         func: F,
         ctx: &'c ::async_graphql::context::Context<'_>,
     ) -> probe_async_graphql::ForeignProbe<'c, T1, T2, O, F, P>
     where
-        T: Table,
-        O: Outcome<Unit = Node<T>> + FlatMapOutcome<P>,
+        O: Outcome<Unit = Node<T2>> + FlatMapOutcome<P>,
         F: Fn(<O as Outcome>::Unit) -> P,
         P: async_graphql::ContainerType,
     {
@@ -83,34 +90,46 @@ where
     type Outcome = O;
 }
 
-/// A 'foreign' reference field that points to
-/// at most one foreign entity
-pub struct OneToOne<T: Table> {
-    foreign: std::marker::PhantomData<T>,
+/// A projection outcome where there will always be exactly one value.
+pub struct OneToOne<T2: Table> {
+    foreign: std::marker::PhantomData<T2>,
 }
 
-impl<T: Table> Outcome for OneToOne<T> {
-    type Unit = Node<T>;
-    type Output = Node<T>;
+impl<T2: Table> Outcome for OneToOne<T2> {
+    type Unit = Node<T2>;
+    type Output = Node<T2>;
 }
 
-impl<T: Table, U> FlatMapOutcome<U> for OneToOne<T> {
-    type Quantify = Unit;
+impl<T2: Table, U> FlatMapOutcome<U> for OneToOne<T2> {
+    type Quantify = quantify::AsSelf;
 }
 
-/// A 'foreign' reference field that points to
-/// potentially many foreign entities.
-pub struct OneToMany<T: Table> {
-    foreign: std::marker::PhantomData<T>,
+/// A projection outcome where there is either one value or nothing.
+pub struct OneToOption<T2: Table> {
+    foreign: std::marker::PhantomData<T2>,
 }
 
-impl<T: Table> Outcome for OneToMany<T> {
-    type Unit = Node<T>;
-    type Output = Vec<Node<T>>;
+impl<T2: Table> Outcome for OneToOption<T2> {
+    type Unit = Node<T2>;
+    type Output = Option<Node<T2>>;
 }
 
-impl<T: Table, U> FlatMapOutcome<U> for OneToMany<T> {
-    type Quantify = Vector;
+impl<T2: Table, U> FlatMapOutcome<U> for OneToOption<T2> {
+    type Quantify = quantify::AsOption;
+}
+
+/// A projection outcome where there are potentially many values.
+pub struct OneToMany<T2: Table> {
+    foreign: std::marker::PhantomData<T2>,
+}
+
+impl<T2: Table> Outcome for OneToMany<T2> {
+    type Unit = Node<T2>;
+    type Output = Vec<Node<T2>>;
+}
+
+impl<T2: Table, U> FlatMapOutcome<U> for OneToMany<T2> {
+    type Quantify = quantify::AsVec;
 }
 
 /// Function wrapper to map from some table node unit `N` into probe `P`,
@@ -140,22 +159,6 @@ where
 {
     type Unit = P;
     type Output = <N::Quantify as Quantify<P>>::Output;
-}
-
-/// Quantify some unit.
-pub trait Quantify<U> {
-    type Output;
-}
-
-pub struct Unit;
-pub struct Vector;
-
-impl<U> Quantify<U> for Unit {
-    type Output = U;
-}
-
-impl<U> Quantify<U> for Vector {
-    type Output = Vec<U>;
 }
 
 #[cfg(feature = "async_graphql")]

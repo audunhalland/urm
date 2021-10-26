@@ -1,3 +1,7 @@
+//!
+//! Primitive projection of columns/fields.
+//!
+
 use super::{LocalId, Outcome, ProjectAndProbe, ProjectFrom};
 use crate::engine::{Probing, QueryField};
 use crate::{Table, UrmResult};

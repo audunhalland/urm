@@ -21,6 +21,7 @@ pub mod filter;
 pub mod prelude;
 pub mod probe;
 pub mod project;
+pub mod quantify;
 pub mod query;
 
 mod engine;
@@ -102,9 +103,6 @@ where
     }
 }
 
-///
-/// # Project
-///
 /// This function _projects_ a _probe_, and serves two purposes at the same time:
 /// 1. figure out the overall structure and anatomy of a database query (i.e. "query builder")
 /// 2. deserialize/provide actual values originating in the database back to the caller, after
@@ -124,9 +122,9 @@ pub async fn project<T, P, M>(probe: &P, arg: M) -> UrmResult<M::Output>
 where
     T: Table,
     P: Probe<Table = T>,
-    M: MapProject<T>,
+    M: ProjectNode<T>,
 {
-    arg.map_project(probe.node()).await
+    arg.project_node(probe.node()).await
 }
 
 #[derive(thiserror::Error, Debug, Clone)]
@@ -143,30 +141,32 @@ pub enum UrmError {
 
 pub type UrmResult<T> = Result<T, UrmError>;
 
-/// Node is somethings which has a place in the query tree,
-/// which is publicly exposed.
+///
+/// The `Node` approximately represents a logical select
+/// or subselect in a query.
+///
 pub struct Node<T: Table> {
-    kind: NodeKind,
+    state: State,
     table: std::marker::PhantomData<T>,
 }
 
 impl<T: Table> Node<T> {
     pub fn new_probe(probing: engine::Probing) -> Self {
         Self {
-            kind: NodeKind::Probe(probing),
+            state: State::Probe(probing),
             table: std::marker::PhantomData,
         }
     }
 
     pub fn new_deserialize() -> Self {
         Self {
-            kind: NodeKind::Deserialize,
+            state: State::Deserialize,
             table: std::marker::PhantomData,
         }
     }
 }
 
-enum NodeKind {
+enum State {
     Probe(engine::Probing),
     Deserialize,
 }
@@ -189,34 +189,37 @@ pub trait Probe {
     fn node(&self) -> &Node<Self::Table>;
 }
 
+///
+/// Project projectable types given a `Node<T>`.
+///
 #[async_trait]
-pub trait MapProject<T: Table> {
+pub trait ProjectNode<T: Table> {
     type Output;
 
-    async fn map_project(self, node: &Node<T>) -> UrmResult<Self::Output>;
+    async fn project_node(self, node: &Node<T>) -> UrmResult<Self::Output>;
 }
 
 #[async_trait]
-impl<T, F> MapProject<T> for F
+impl<T, F> ProjectNode<T> for F
 where
     T: Table,
     F: project::ProjectFrom<Table = T> + project::ProjectAndProbe,
 {
     type Output = <F::Outcome as project::Outcome>::Output;
 
-    async fn map_project(self, node: &Node<T>) -> UrmResult<Self::Output> {
-        match &node.kind {
-            NodeKind::Probe(probing) => {
+    async fn project_node(self, node: &Node<T>) -> UrmResult<Self::Output> {
+        match &node.state {
+            State::Probe(probing) => {
                 self.project_and_probe(probing)?;
                 never::never().await
             }
-            NodeKind::Deserialize => Err(UrmError::Deserialization),
+            State::Deserialize => Err(UrmError::Deserialization),
         }
     }
 }
 
 #[async_trait]
-impl<T, F0, F1> MapProject<T> for (F0, F1)
+impl<T, F0, F1> ProjectNode<T> for (F0, F1)
 where
     T: Table,
     F0: project::ProjectFrom<Table = T> + project::ProjectAndProbe,
@@ -227,14 +230,14 @@ where
         <F1::Outcome as project::Outcome>::Output,
     );
 
-    async fn map_project(self, node: &Node<T>) -> UrmResult<Self::Output> {
-        match &node.kind {
-            NodeKind::Probe(probing) => {
+    async fn project_node(self, node: &Node<T>) -> UrmResult<Self::Output> {
+        match &node.state {
+            State::Probe(probing) => {
                 self.0.project_and_probe(probing)?;
                 self.1.project_and_probe(probing)?;
                 never::never().await
             }
-            NodeKind::Deserialize => Err(UrmError::Deserialization),
+            State::Deserialize => Err(UrmError::Deserialization),
         }
     }
 }

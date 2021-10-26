@@ -1,3 +1,7 @@
+//!
+//! Things related to data projection, the shape of returned data.
+//!
+
 use crate::engine::Probing;
 use crate::{Table, UrmResult};
 
@@ -28,7 +32,7 @@ pub trait Outcome: Sized + Send + Sync + 'static {
     /// Unit (unquantified) output of this outcome
     type Unit: Send + Sync + 'static;
 
-    /// Final, quantified output of this outcome (possibly Vec<Self::Unit> or some other collection).
+    /// Final, quantified output of this outcome (possibly `Vec<Self::Unit>` or some other collection).
     type Output: Send + Sync + 'static;
 }
 

@@ -1,3 +1,7 @@
+//!
+//! Support functions for probing.
+//!
+
 use std::future::Future;
 
 pub fn probe_container<T: async_graphql::ContainerType>(
