@@ -1,8 +1,8 @@
-use super::{Field, FieldMechanics, LocalId, ProjectAndProbe};
+use super::{LocalId, ProjectAndProbe, Projectable, ProjectionMechanics};
 use crate::engine::{Probing, QueryField};
 use crate::{Table, UrmResult};
 
-pub trait PrimitiveField: Field {
+pub trait PrimitiveField: Projectable {
     fn name(&self) -> &'static str;
 
     fn local_id(&self) -> LocalId;
@@ -30,7 +30,7 @@ where
     }
 }
 
-impl<T, O> Field for Primitive<T, O>
+impl<T, O> Projectable for Primitive<T, O>
 where
     T: Table,
     O: Sized + Send + Sync + 'static,
@@ -61,7 +61,7 @@ pub struct PrimitiveMechanics<T> {
     table: std::marker::PhantomData<T>,
 }
 
-impl<O> FieldMechanics for PrimitiveMechanics<O>
+impl<O> ProjectionMechanics for PrimitiveMechanics<O>
 where
     O: Send + Sync + 'static,
 {

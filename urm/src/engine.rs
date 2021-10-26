@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::expr;
-use crate::field;
+use crate::project;
 use crate::query;
 use crate::{Table, UrmResult};
 
@@ -101,7 +101,7 @@ pub struct Select {
     /// The projection, which is getting built dynamically. Eh...
     /// TODO: Does the projection contain all child "queries"?
     /// not likely.
-    pub projection: Mutex<BTreeMap<field::LocalId, QueryField>>,
+    pub projection: Mutex<BTreeMap<project::LocalId, QueryField>>,
 
     /// Where clause
     pub predicate: Option<expr::Predicate>,

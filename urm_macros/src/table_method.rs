@@ -241,12 +241,12 @@ pub fn gen_method(
         };
 
         quote! {
-            pub fn #method_ident(#inputs) -> ::urm::field::foreign::Foreign<
+            pub fn #method_ident(#inputs) -> ::urm::project::foreign::Foreign<
                 #local_table_path,
                 #foreign_table_path,
-                ::urm::field::foreign::#mechanics<#output_type>
+                ::urm::project::foreign::#mechanics<#output_type>
             > {
-                urm::field::foreign::Foreign::new(#eq_pred)
+                urm::project::foreign::Foreign::new(#eq_pred)
             }
         }
     } else {
@@ -266,10 +266,10 @@ pub fn gen_method(
         };
 
         quote! {
-            pub fn #method_ident(#inputs) -> ::urm::field::primitive::Primitive<#local_table_path, #value> {
-                ::urm::field::primitive::Primitive::new(
+            pub fn #method_ident(#inputs) -> ::urm::project::primitive::Primitive<#local_table_path, #value> {
+                ::urm::project::primitive::Primitive::new(
                     #field_name,
-                    ::urm::field::LocalId(#field_id)
+                    ::urm::project::LocalId(#field_id)
                 )
             }
         }

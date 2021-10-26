@@ -1,15 +1,15 @@
-use super::{Field, FieldMechanics, LocalId, ProjectAndProbe};
+use super::{LocalId, ProjectAndProbe, Projectable, ProjectionMechanics};
 use crate::engine::{Probing, QueryField};
 use crate::expr;
 use crate::{Filter, Instance, Node, Table, UrmResult};
 
 /// Quantification of some unit value into quantified output
 /// for the probing process
-pub trait ForeignMechanics<U>: FieldMechanics {
+pub trait ForeignMechanics<U>: ProjectionMechanics {
     type Quantify: Quantify<U>;
 }
 
-pub struct Foreign<T1, T2, M: FieldMechanics> {
+pub struct Foreign<T1, T2, M: ProjectionMechanics> {
     join_predicate: expr::Predicate,
     predicate: Option<expr::Predicate>,
     source_table: std::marker::PhantomData<T1>,
@@ -21,7 +21,7 @@ impl<T1, T2, M> Foreign<T1, T2, M>
 where
     T1: Table,
     T2: Table + Instance,
-    M: FieldMechanics,
+    M: ProjectionMechanics,
 {
     pub fn new(join_predicate: expr::Predicate) -> Self {
         Self {
@@ -41,8 +41,8 @@ where
     ) -> probe_shim::ForeignProbeShim<'c, T1, T2, M, Func, Out>
     where
         T: Table,
-        M: FieldMechanics<Unit = Node<T>> + ForeignMechanics<Out>,
-        Func: Fn(<M as FieldMechanics>::Unit) -> Out,
+        M: ProjectionMechanics<Unit = Node<T>> + ForeignMechanics<Out>,
+        Func: Fn(<M as ProjectionMechanics>::Unit) -> Out,
         Out: async_graphql::ContainerType,
     {
         probe_shim::ForeignProbeShim::new(self, ProbeMechanics::new(func), ctx)
@@ -52,7 +52,7 @@ where
 impl<T1, T2, M> Filter for Foreign<T1, T2, M>
 where
     T2: Table + Instance,
-    M: FieldMechanics,
+    M: ProjectionMechanics,
 {
     type Table = T2;
 
@@ -64,11 +64,11 @@ where
     }
 }
 
-impl<T1, T2, M> Field for Foreign<T1, T2, M>
+impl<T1, T2, M> Projectable for Foreign<T1, T2, M>
 where
     T1: Table,
     T2: Table,
-    M: FieldMechanics,
+    M: ProjectionMechanics,
 {
     type Table = T1;
     type Mechanics = M;
@@ -80,7 +80,7 @@ pub struct OneToOneMechanics<T: Table> {
     foreign: std::marker::PhantomData<T>,
 }
 
-impl<T: Table> FieldMechanics for OneToOneMechanics<T> {
+impl<T: Table> ProjectionMechanics for OneToOneMechanics<T> {
     type Unit = Node<T>;
     type Output = Node<T>;
 }
@@ -95,7 +95,7 @@ pub struct OneToManyMechanics<T: Table> {
     foreign: std::marker::PhantomData<T>,
 }
 
-impl<T: Table> FieldMechanics for OneToManyMechanics<T> {
+impl<T: Table> ProjectionMechanics for OneToManyMechanics<T> {
     type Unit = Node<T>;
     type Output = Vec<Node<T>>;
 }
@@ -124,7 +124,7 @@ where
     }
 }
 
-impl<Func, In, Out> FieldMechanics for ProbeMechanics<Func, In, Out>
+impl<Func, In, Out> ProjectionMechanics for ProbeMechanics<Func, In, Out>
 where
     Func: Send + Sync + 'static,
     In: ForeignMechanics<Out>,
@@ -159,7 +159,7 @@ pub mod probe_shim {
         'c,
         T1,
         T2,
-        M: FieldMechanics,
+        M: ProjectionMechanics,
         Func,
         Out: async_graphql::ContainerType,
     > {
@@ -170,7 +170,7 @@ pub mod probe_shim {
 
     impl<'c, T1, T2, M, Func, Out> ForeignProbeShim<'c, T1, T2, M, Func, Out>
     where
-        M: FieldMechanics,
+        M: ProjectionMechanics,
         Out: async_graphql::ContainerType,
     {
         pub fn new(
@@ -186,7 +186,7 @@ pub mod probe_shim {
         }
     }
 
-    impl<'c, T1, T2, M, Func, Out> Field for ForeignProbeShim<'c, T1, T2, M, Func, Out>
+    impl<'c, T1, T2, M, Func, Out> Projectable for ForeignProbeShim<'c, T1, T2, M, Func, Out>
     where
         T1: Table,
         T2: Table + Instance,
@@ -203,8 +203,8 @@ pub mod probe_shim {
     where
         T1: Table,
         T2: Table + Instance,
-        M: FieldMechanics<Unit = Node<T2>> + ForeignMechanics<Out>,
-        Func: (Fn(<M as FieldMechanics>::Unit) -> Out) + Send + Sync + 'static,
+        M: ProjectionMechanics<Unit = Node<T2>> + ForeignMechanics<Out>,
+        Func: (Fn(<M as ProjectionMechanics>::Unit) -> Out) + Send + Sync + 'static,
         <<M as ForeignMechanics<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
         Out: async_graphql::ContainerType + Send + Sync + 'static,
     {
@@ -222,7 +222,7 @@ pub mod probe_shim {
 
                 proj_lock.insert(
                     // FIXME: This should be "dynamic" in some way,
-                    // or use a different type of key when projection.
+                    // or use a different type of key when projecting.
                     // perhaps keyed by the predicates..?
                     LocalId(0),
                     QueryField::Foreign {

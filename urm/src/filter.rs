@@ -1,3 +1,9 @@
+pub trait Constrain {}
+
+pub struct Filter {
+    pub range: std::ops::Range<Option<usize>>,
+}
+
 pub trait Range: Send + Sync + 'static {
     fn offset(&self) -> Option<usize> {
         None

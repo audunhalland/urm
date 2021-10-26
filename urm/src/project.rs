@@ -8,19 +8,18 @@ pub mod primitive;
 pub struct LocalId(pub u16);
 
 ///
-/// A field having some data type, that can be found in some database.
+/// Anything that can be projected
 ///
-pub trait Field: Sized + Send + Sync {
-    /// The table that owns this field
+pub trait Projectable: Sized + Send + Sync {
+    /// The table projected from
     type Table: Table;
 
-    /// The field 'mechanics', which determines how the field
-    /// behaves in the API
-    type Mechanics: FieldMechanics;
+    /// The mechanics which determines the complexity of the projection
+    type Mechanics: ProjectionMechanics;
 }
 
 /// Field mechanics
-pub trait FieldMechanics: Sized + Send + Sync + 'static {
+pub trait ProjectionMechanics: Sized + Send + Sync + 'static {
     /// Unit of this field type, in case Output is quantified
     type Unit: Send + Sync + 'static;
 

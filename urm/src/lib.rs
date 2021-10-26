@@ -17,10 +17,10 @@ use async_trait::*;
 pub use urm_macros::*;
 
 pub mod expr;
-pub mod field;
 pub mod filter;
 pub mod prelude;
 pub mod probe;
+pub mod project;
 pub mod query;
 
 mod engine;
@@ -56,7 +56,7 @@ where
     /// to send to the database.
     #[cfg(feature = "async_graphql")]
     pub async fn probe_with<F, U>(
-        &self,
+        self,
         func: F,
         ctx: &async_graphql::Context<'_>,
     ) -> UrmResult<Vec<U>>
@@ -200,9 +200,9 @@ pub trait MapProject<T: Table> {
 impl<T, F> MapProject<T> for F
 where
     T: Table,
-    F: field::Field<Table = T> + field::ProjectAndProbe,
+    F: project::Projectable<Table = T> + project::ProjectAndProbe,
 {
-    type Output = <F::Mechanics as field::FieldMechanics>::Output;
+    type Output = <F::Mechanics as project::ProjectionMechanics>::Output;
 
     async fn map_project(self, node: &Node<T>) -> UrmResult<Self::Output> {
         match &node.kind {
@@ -219,12 +219,12 @@ where
 impl<T, F0, F1> MapProject<T> for (F0, F1)
 where
     T: Table,
-    F0: field::Field<Table = T> + field::ProjectAndProbe,
-    F1: field::Field<Table = T> + field::ProjectAndProbe,
+    F0: project::Projectable<Table = T> + project::ProjectAndProbe,
+    F1: project::Projectable<Table = T> + project::ProjectAndProbe,
 {
     type Output = (
-        <F0::Mechanics as field::FieldMechanics>::Output,
-        <F1::Mechanics as field::FieldMechanics>::Output,
+        <F0::Mechanics as project::ProjectionMechanics>::Output,
+        <F1::Mechanics as project::ProjectionMechanics>::Output,
     );
 
     async fn map_project(self, node: &Node<T>) -> UrmResult<Self::Output> {
