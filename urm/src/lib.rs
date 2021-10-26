@@ -142,37 +142,45 @@ pub enum UrmError {
 pub type UrmResult<T> = Result<T, UrmError>;
 
 ///
-/// The `Node` approximately represents a logical select
-/// or subselect in a query.
+/// A projectable 'point' in a database schema.
+///
+/// A `Node` represents an anchor point to spin off new child projections or sub-queries.
+///
+/// `Node` exists in two different "phases": Probe and Deserialize. However, this is
+/// indiscernible at the type level.
+///
+/// `urm` works by first _probing_ nodes internally, then _deserializing_ externally, using
+/// the same asynchronous user-supplied function.
 ///
 pub struct Node<T: Table> {
-    state: State,
+    phase: Phase,
     table: std::marker::PhantomData<T>,
 }
 
 impl<T: Table> Node<T> {
-    pub fn new_probe(probing: engine::Probing) -> Self {
+    pub(crate) fn new_probe(probing: engine::Probing) -> Self {
         Self {
-            state: State::Probe(probing),
+            phase: Phase::Probe(probing),
             table: std::marker::PhantomData,
         }
     }
 
-    pub fn new_deserialize() -> Self {
+    pub(crate) fn new_deserialize() -> Self {
         Self {
-            state: State::Deserialize,
+            phase: Phase::Deserialize,
             table: std::marker::PhantomData,
         }
     }
 }
 
-enum State {
+enum Phase {
     Probe(engine::Probing),
     Deserialize,
 }
 
 ///
-/// # Probe
+/// High level trait that enables probing - i.e. hierarchical analysis of
+/// some 3rd-party tree-like data structure that can translate into a database query.
 ///
 /// The probing procedure involves looking at related database projections
 /// as a tree, recursively producing a new tree of queries/subqueries that
@@ -208,12 +216,12 @@ where
     type Output = <F::Outcome as project::Outcome>::Output;
 
     async fn project_node(self, node: &Node<T>) -> UrmResult<Self::Output> {
-        match &node.state {
-            State::Probe(probing) => {
+        match &node.phase {
+            Phase::Probe(probing) => {
                 self.project_and_probe(probing)?;
                 never::never().await
             }
-            State::Deserialize => Err(UrmError::Deserialization),
+            Phase::Deserialize => Err(UrmError::Deserialization),
         }
     }
 }
@@ -231,13 +239,13 @@ where
     );
 
     async fn project_node(self, node: &Node<T>) -> UrmResult<Self::Output> {
-        match &node.state {
-            State::Probe(probing) => {
+        match &node.phase {
+            Phase::Probe(probing) => {
                 self.0.project_and_probe(probing)?;
                 self.1.project_and_probe(probing)?;
                 never::never().await
             }
-            State::Deserialize => Err(UrmError::Deserialization),
+            Phase::Deserialize => Err(UrmError::Deserialization),
         }
     }
 }

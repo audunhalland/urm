@@ -25,9 +25,10 @@ pub trait ProjectFrom: Sized + Send + Sync {
     type Outcome: Outcome;
 }
 
-/// # Projection outcome
-///
-/// Represents the produced value of a projection.
+/// Represents the output type/result of a projection.
+/// Because the result of a projection may be a unit type
+/// or a collection type, the `Outcome` trait associates both
+/// types at once, so they can more easily be mapped in more intricate ways.
 pub trait Outcome: Sized + Send + Sync + 'static {
     /// Unit (unquantified) output of this outcome
     type Unit: Send + Sync + 'static;
@@ -36,9 +37,14 @@ pub trait Outcome: Sized + Send + Sync + 'static {
     type Output: Send + Sync + 'static;
 }
 
-/// # ProjectAndProbe
+/// ProjectAndProbe is the trait that is implemented for types
+/// that are ready to be projected and/or probed.
 ///
-/// Any type representing a fully built projection must implement this trait.
+/// This trait is the final typestate of a single projection, which is
+/// no ready to be processed by `urm::project`.
+///
+/// Not all `ProjectFrom` types implement `ProjectAndProbe`, and
+/// may need further mapping before reaching this typestate.
 pub trait ProjectAndProbe {
     fn project_and_probe(self, probing: &Probing) -> UrmResult<()>;
 }

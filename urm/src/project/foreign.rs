@@ -185,7 +185,7 @@ pub mod probe_async_graphql {
         O: Outcome,
         P: async_graphql::ContainerType,
     {
-        pub fn new(
+        pub(crate) fn new(
             foreign: Foreign<T1, T2, O>,
             map_to_probe: MapToProbe<F, O::Unit, P>,
             ctx: &'c ::async_graphql::context::Context<'c>,
