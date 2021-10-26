@@ -108,8 +108,8 @@ where
 /// 2. deserialize/provide actual values originating in the database back to the caller, after
 ///    the query has been successfully executed.
 ///
-/// This async function operates in two completely different modes, based on which `Node` state
-/// is acquired from the Probe.
+/// This async function operates in two completely different modes, based on which _phase_ the
+/// associated `Probe::node()` is in.
 ///
 /// If that node is a probing node, the produced future will *never* resolve to a ready value.
 /// If that node is a deserialization node, the produced future will try to yield the requested values.
@@ -144,7 +144,7 @@ pub type UrmResult<T> = Result<T, UrmError>;
 ///
 /// A projectable 'point' in a database schema.
 ///
-/// A `Node` represents an anchor point to spin off new child projections or sub-queries.
+/// A `Node` represents an anchor point from which to spin off new child projections or sub-queries.
 ///
 /// `Node` exists in two different "phases": Probe and Deserialize. However, this is
 /// indiscernible at the type level.
