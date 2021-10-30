@@ -1,8 +1,6 @@
 use urm::prelude::*;
 
 pub mod db {
-    use urm::prelude::*;
-
     pub struct Publication;
     pub struct Edition;
     pub struct Module;
@@ -28,6 +26,22 @@ pub mod db {
 
         #[foreign(Self(publication_id) => Publication(id))]
         fn publication(self) -> Publication;
+    }
+
+    #[urm::table("contribution")]
+    impl Contribution {
+        fn id(self) -> String;
+
+        // LOL
+        fn contributor_id(self) -> Option<String>;
+
+        #[foreign(Self(contributor_id) => Contributor(id))]
+        fn contributor(self) -> Contributor;
+    }
+
+    #[urm::table("contributor")]
+    impl Contributor {
+        fn id(self) -> String;
     }
 }
 

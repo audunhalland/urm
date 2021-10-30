@@ -16,6 +16,7 @@ use async_trait::*;
 
 pub use urm_macros::*;
 
+pub mod build;
 pub mod expr;
 pub mod filter;
 pub mod prelude;

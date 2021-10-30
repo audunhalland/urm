@@ -3,8 +3,8 @@
 extern crate proc_macro;
 
 mod derive_probe;
-mod table_method;
 mod table;
+mod table_method;
 
 mod attr {
     pub mod attr_util;
@@ -17,6 +17,9 @@ use quote::quote;
 #[proc_macro_attribute]
 pub fn table(args: TokenStream, input: TokenStream) -> TokenStream {
     let name: syn::LitStr = syn::parse_macro_input!(args as syn::LitStr);
+
+    println!("derive table for {:?}", name);
+
     let impl_table = syn::parse_macro_input!(input as table::ImplTable);
 
     let tokens = table::gen_table(name, impl_table);

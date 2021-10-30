@@ -15,6 +15,30 @@ pub trait FlatMapOutcome<U>: Outcome {
     type Quantify: Quantify<U>;
 }
 
+pub trait ProjectForeign: ProjectFrom {
+    type ForeignTable: Table + Instance;
+
+    ///
+    /// Probe this Foreign, effectively mapping the original
+    /// outcome type to the probe-able outcome type `P`.
+    ///
+    #[cfg(feature = "async_graphql")]
+    fn probe_with<'c, F, P>(
+        self,
+        func: F,
+        ctx: &'c ::async_graphql::context::Context<'_>,
+    ) -> probe_async_graphql::ForeignProbe<'c, Self, F, P>
+    where
+        Self::Outcome: Outcome<Unit = Node<Self::ForeignTable>> + FlatMapOutcome<P>,
+        F: Fn(<Self::Outcome as Outcome>::Unit) -> P,
+        P: async_graphql::ContainerType,
+    {
+        let map_to_probe = MapToProbe::new(func);
+
+        probe_async_graphql::ForeignProbe::new(self, map_to_probe, ctx)
+    }
+}
+
 ///
 /// A projection using a _foreign key_, leading into a foreign table.
 ///
@@ -45,24 +69,6 @@ where
             outcome: std::marker::PhantomData,
         }
     }
-
-    ///
-    /// Probe this Foreign, effectively mapping the original
-    /// outcome type to the probe-able outcome type `P`.
-    ///
-    #[cfg(feature = "async_graphql")]
-    pub fn probe_with<'c, F, P>(
-        self,
-        func: F,
-        ctx: &'c ::async_graphql::context::Context<'_>,
-    ) -> probe_async_graphql::ForeignProbe<'c, T1, T2, O, F, P>
-    where
-        O: Outcome<Unit = Node<T2>> + FlatMapOutcome<P>,
-        F: Fn(<O as Outcome>::Unit) -> P,
-        P: async_graphql::ContainerType,
-    {
-        probe_async_graphql::ForeignProbe::new(self, MapToProbe::new(func), ctx)
-    }
 }
 
 impl<T1, T2, O> Filter for Foreign<T1, T2, O>
@@ -88,6 +94,15 @@ where
 {
     type Table = T1;
     type Outcome = O;
+}
+
+impl<T1, T2, O> ProjectForeign for Foreign<T1, T2, O>
+where
+    T1: Table,
+    T2: Table + Instance,
+    O: Outcome,
+{
+    type ForeignTable = T2;
 }
 
 /// A projection outcome where there will always be exactly one value.
@@ -174,63 +189,69 @@ pub mod probe_async_graphql {
     /// `F` is a function that maps to the probe type.
     /// `P` _is_ the probe type, the `ContainerType`.
     ///
-    pub struct ForeignProbe<'c, T1, T2, O: Outcome, F, P: async_graphql::ContainerType> {
-        foreign: Foreign<T1, T2, O>,
-        map_to_probe: MapToProbe<F, O::Unit, P>,
+    pub struct ForeignProbe<'c, PF, F, P>
+    where
+        PF: ProjectForeign,
+        P: async_graphql::ContainerType,
+    {
+        project_foreign: PF,
+        map_to_probe: MapToProbe<F, <<PF as ProjectFrom>::Outcome as Outcome>::Unit, P>,
         ctx: &'c ::async_graphql::context::Context<'c>,
     }
 
-    impl<'c, T1, T2, O, F, P> ForeignProbe<'c, T1, T2, O, F, P>
+    impl<'c, PF, F, P> ForeignProbe<'c, PF, F, P>
     where
-        O: Outcome,
+        PF: ProjectForeign,
         P: async_graphql::ContainerType,
     {
         pub(crate) fn new(
-            foreign: Foreign<T1, T2, O>,
-            map_to_probe: MapToProbe<F, O::Unit, P>,
+            project_foreign: PF,
+            map_to_probe: MapToProbe<F, <<PF as ProjectFrom>::Outcome as Outcome>::Unit, P>,
             ctx: &'c ::async_graphql::context::Context<'c>,
         ) -> Self {
             Self {
-                foreign,
+                project_foreign,
                 map_to_probe,
                 ctx,
             }
         }
     }
 
-    impl<'c, T1, T2, O, F, P> ProjectFrom for ForeignProbe<'c, T1, T2, O, F, P>
+    impl<'c, PF, F, P> ProjectFrom for ForeignProbe<'c, PF, F, P>
     where
-        T1: Table,
-        T2: Table + Instance,
-        O: FlatMapOutcome<P>,
+        PF: ProjectForeign,
         F: Send + Sync + 'static,
-        <<O as FlatMapOutcome<P>>::Quantify as Quantify<P>>::Output: Send + Sync + 'static,
+        PF::Outcome: FlatMapOutcome<P>,
+        <<PF::Outcome as FlatMapOutcome<P>>::Quantify as Quantify<P>>::Output:
+            Send + Sync + 'static,
         P: async_graphql::ContainerType + Send + Sync + 'static,
     {
-        type Table = T1;
-        type Outcome = MapToProbe<F, O, P>;
+        type Table = PF::Table;
+        type Outcome = MapToProbe<F, PF::Outcome, P>;
     }
 
-    impl<'c, T1, T2, O, F, P> ProjectAndProbe for ForeignProbe<'c, T1, T2, O, F, P>
+    impl<'c, PF, F, P> ProjectAndProbe for ForeignProbe<'c, PF, F, P>
     where
-        T1: Table,
-        T2: Table + Instance,
-        O: Outcome<Unit = Node<T2>> + FlatMapOutcome<P>,
-        F: (Fn(<O as Outcome>::Unit) -> P) + Send + Sync + 'static,
-        <<O as FlatMapOutcome<P>>::Quantify as Quantify<P>>::Output: Send + Sync + 'static,
+        PF: ProjectForeign,
+        PF::Outcome: Outcome<Unit = Node<PF::ForeignTable>> + FlatMapOutcome<P>,
+        <<PF::Outcome as FlatMapOutcome<P>>::Quantify as Quantify<P>>::Output:
+            Send + Sync + 'static,
+        F: (Fn(<PF::Outcome as Outcome>::Unit) -> P) + Send + Sync + 'static,
         P: async_graphql::ContainerType + Send + Sync + 'static,
     {
         fn project_and_probe(self, probing: &Probing) -> UrmResult<()> {
-            let foreign_table = T2::instance();
+            let foreign_table = PF::ForeignTable::instance();
             let sub_select = probing
                 .engine()
                 .query
                 .lock()
-                .new_select(foreign_table, self.foreign.predicate);
+                // FIXME: 'filter predicate':
+                .new_select(foreign_table, None);
 
             {
                 let mut proj_lock = probing.select().projection.lock();
-                let join_predicate = self.foreign.join_predicate;
+                // FIXME:
+                let join_predicate = crate::expr::Predicate::And(vec![]);
 
                 proj_lock.insert(
                     // FIXME: This should be "dynamic" in some way,
@@ -244,7 +265,7 @@ pub mod probe_async_graphql {
                 );
             }
 
-            let sub_node = Node::<T2>::new_probe(crate::engine::Probing::new(
+            let sub_node = Node::<PF::ForeignTable>::new_probe(crate::engine::Probing::new(
                 probing.engine().clone(),
                 sub_select,
             ));

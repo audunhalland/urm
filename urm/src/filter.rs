@@ -1,7 +1,13 @@
+use crate::build::BuildQuery;
+
 pub trait Constrain {}
 
-pub struct Filter {
-    pub range: std::ops::Range<Option<usize>>,
+pub trait Filter {
+    type Output: Filter;
+
+    fn filter<B>(self, b: B) -> Self::Output
+    where
+        B: BuildQuery;
 }
 
 pub trait Range: Send + Sync + 'static {
