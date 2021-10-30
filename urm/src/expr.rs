@@ -1,4 +1,7 @@
-use crate::build::QueryBuilder;
+use std::fmt::Write;
+
+use crate::build::Ctx;
+use crate::builder::QueryBuilder;
 use crate::Database;
 
 #[derive(Clone, Debug)]
@@ -7,7 +10,15 @@ pub enum Expr<DB: Database> {
 }
 
 impl<DB: Database> Expr<DB> {
-    pub fn build_expr(&self, builder: &mut QueryBuilder<DB>) {}
+    pub fn build_expr(&self, builder: &mut QueryBuilder<DB>, ctx: &Ctx<DB>) {
+        match self {
+            Self::TableColumn(table_expr, name) => {
+                table_expr.build(builder, ctx);
+                builder.push(".");
+                builder.push(name);
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -15,6 +26,18 @@ pub enum TableExpr<DB: Database> {
     This,
     Parent,
     Alias(TableAlias<DB>),
+}
+
+impl<DB: Database> TableExpr<DB> {
+    pub fn build(&self, builder: &mut QueryBuilder<DB>, ctx: &Ctx<DB>) {
+        match self {
+            Self::This => builder.push(ctx.table.name()),
+            Self::Parent => builder.push(ctx.parent_table.as_ref().unwrap().name()),
+            Self::Alias(alias) => {
+                write!(builder.buf_mut(), "a{}", alias.alias).unwrap();
+            }
+        }
+    }
 }
 
 #[derive(Clone)]

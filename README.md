@@ -1,4 +1,4 @@
-# Urm
+# Urm Relational Mapper
 Turn your database into a queryable graph. But stop for a sec - not in the conventional boring way you've now seen so many times. Urm works a bit differently.
 
 Conventional database-to-graph libraries/services present an interface where the database schema is more or less automatically mirrored into

@@ -17,6 +17,7 @@ use async_trait::*;
 pub use urm_macros::*;
 
 pub mod build;
+pub mod builder;
 pub mod expr;
 pub mod filter;
 pub mod postgres;
@@ -25,7 +26,6 @@ pub mod prelude;
 pub mod probe;
 pub mod project;
 pub mod quantify;
-pub mod query;
 
 mod engine;
 mod experiment;
@@ -62,7 +62,7 @@ where
     ) -> UrmResult<Vec<U>>
     where
         F: Fn(Node<T>) -> U,
-        U: async_graphql::ContainerType,
+        U: Probe + async_graphql::ContainerType,
     {
         let table = T::instance();
         let (engine, probing) = engine::Engine::new_select(table);
@@ -72,10 +72,25 @@ where
 
         probe::probe_container(&container, ctx);
 
+        {
+            let lock = engine.query.lock();
+            let mut builder = builder::QueryBuilder::new();
+
+            lock.build_query(&mut builder);
+
+            let sql = builder.build();
+
+            println!("{}", sql);
+
+            Err(UrmError::DebugSelect(sql))
+        }
+
+        /*
         let query_engine = engine.query.clone();
         let dbg = format!("{:?}", query_engine.lock());
 
         Err(UrmError::DebugSelect(dbg))
+        */
     }
 }
 

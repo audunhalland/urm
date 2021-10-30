@@ -1,11 +1,13 @@
 use parking_lot::Mutex;
 use std::collections::BTreeMap;
+use std::fmt::Write;
 use std::sync::Arc;
 
-use crate::build::BuildPredicate;
+use crate::build::{BuildPredicate, Ctx};
+use crate::builder;
+use crate::builder::QueryBuilder;
 use crate::expr;
 use crate::project;
-use crate::query;
 use crate::{Database, Table, UrmResult};
 
 #[derive(Clone)]
@@ -57,12 +59,8 @@ impl<DB: Database> QueryEngine<DB> {
         })
     }
 
-    pub async fn execute(self) -> UrmResult<()> {
-        let mut builder = query::PGQueryBuilder::new();
-        self.root_select.build_query(&mut builder);
-        // TODO Execute here
-
-        panic!();
+    pub fn build_query(&self, builder: &mut QueryBuilder<DB>) {
+        self.root_select.build_query(builder, None);
     }
 }
 
@@ -109,9 +107,64 @@ pub struct Select<DB: Database> {
 }
 
 impl<DB: Database> Select<DB> {
-    fn build_query(&self, builder: &mut dyn query::QueryBuilder) {
-        builder.enter_select();
-        builder.exit_select();
+    fn build_query(
+        &self,
+        builder: &mut builder::QueryBuilder<DB>,
+        parent_table: Option<&'static dyn Table<DB = DB>>,
+    ) {
+        builder.push("SELECT");
+        builder.newline_indent();
+
+        {
+            // TODO: db-dependent 'syntax'
+            builder.push("jsonb_build_object(");
+
+            builder.newline_indent();
+            for (local_id, query_field) in self.projection.lock().iter() {
+                write!(builder.buf_mut(), "'{}', ", local_id.0).unwrap();
+                match query_field {
+                    QueryField::Primitive => builder.push("PRIMITIVE,"),
+                    QueryField::Foreign {
+                        select,
+                        join_predicate,
+                    } => {
+                        builder.push("(");
+                        builder.newline_indent();
+                        select.build_query(builder, Some(self.from.table));
+                        builder.newline_outdent();
+                        builder.push(")");
+                    }
+                }
+                builder.newline();
+            }
+            builder.newline_outdent();
+
+            builder.push(")");
+        }
+
+        builder.newline_outdent();
+
+        write!(
+            builder.buf_mut(),
+            "FROM {} a{}",
+            self.from.table.name(),
+            self.from.alias
+        )
+        .unwrap();
+
+        if let Some(predicate) = &self.predicate {
+            builder.newline();
+            builder.push("WHERE");
+            builder.newline_indent();
+
+            let ctx = Ctx {
+                table: self.from.table,
+                parent_table,
+            };
+
+            predicate.build_predicate(builder, &ctx);
+            builder.newline_outdent();
+        }
     }
 }
 
