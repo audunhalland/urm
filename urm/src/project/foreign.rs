@@ -3,11 +3,13 @@
 //!
 
 use super::{LocalId, Outcome, ProjectAndProbe, ProjectFrom};
+use crate::build::{BuildPredicate, BuildRange};
 use crate::engine::{Probing, QueryField};
-use crate::expr;
+use crate::filter;
+use crate::predicate::{IntoPredicates, Predicates};
 use crate::quantify;
 use crate::quantify::Quantify;
-use crate::{Filter, Instance, Node, Table, UrmResult};
+use crate::{Instance, Node, Table, UrmResult};
 
 /// 'FlatMap' some Outcome into the type `U`
 /// having the desired quantification.
@@ -15,7 +17,7 @@ pub trait FlatMapOutcome<U>: Outcome {
     type Quantify: Quantify<U>;
 }
 
-pub trait ProjectForeign: ProjectFrom {
+pub trait ProjectForeign: ProjectFrom + IntoPredicates {
     type ForeignTable: Table + Instance;
 
     ///
@@ -39,6 +41,8 @@ pub trait ProjectForeign: ProjectFrom {
     }
 }
 
+trait IntoForeignPredicates {}
+
 ///
 /// A projection using a _foreign key_, leading into a foreign table.
 ///
@@ -46,61 +50,121 @@ pub trait ProjectForeign: ProjectFrom {
 /// `T2` is the inner table.
 /// `O` is the original outcome of the mapping (having Unit type `Node<T2>` for probing to work).
 ///
-pub struct Foreign<T1, T2, O: Outcome> {
-    join_predicate: expr::Predicate,
-    predicate: Option<expr::Predicate>,
+pub struct Foreign<T1, T2, O, J, F, R> {
     source_table: std::marker::PhantomData<T1>,
     foreign_table: std::marker::PhantomData<T2>,
     outcome: std::marker::PhantomData<O>,
+    join: J,
+    filter: F,
+    range: R,
 }
 
-impl<T1, T2, O> Foreign<T1, T2, O>
-where
-    T1: Table,
-    T2: Table + Instance,
-    O: Outcome,
-{
-    pub fn new(join_predicate: expr::Predicate) -> Self {
-        Self {
-            join_predicate,
-            predicate: None,
-            source_table: std::marker::PhantomData,
-            foreign_table: std::marker::PhantomData,
-            outcome: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<T1, T2, O> Filter for Foreign<T1, T2, O>
-where
-    T2: Table + Instance,
-    O: Outcome,
-{
-    type Table = T2;
-
-    fn range<R>(self, _r: R) -> Self
-    where
-        R: crate::filter::Range,
-    {
-        self
-    }
-}
-
-impl<T1, T2, O> ProjectFrom for Foreign<T1, T2, O>
+pub fn foreign_join<T1, T2, O, J>(join: J) -> Foreign<T1, T2, O, J, (), ()>
 where
     T1: Table,
     T2: Table,
     O: Outcome,
+    J: BuildPredicate,
+{
+    Foreign {
+        source_table: std::marker::PhantomData,
+        foreign_table: std::marker::PhantomData,
+        outcome: std::marker::PhantomData,
+        join,
+        filter: (),
+        range: (),
+    }
+}
+
+impl<T1, T2, O, J, F, F2, R> filter::Filter<F2> for Foreign<T1, T2, O, J, F, R>
+where
+    T1: Table,
+    T2: Table + Instance,
+    O: Outcome,
+    J: BuildPredicate,
+    F: BuildPredicate,
+    F2: BuildPredicate,
+    R: BuildRange,
+{
+    type Output = Foreign<T1, T2, O, J, F2, R>;
+
+    fn filter(self, filter: F2) -> Self::Output {
+        Self::Output {
+            source_table: std::marker::PhantomData,
+            foreign_table: std::marker::PhantomData,
+            outcome: std::marker::PhantomData,
+            join: self.join,
+            filter,
+            range: self.range,
+        }
+    }
+}
+
+impl<T1, T2, O, J, F, R, R2> filter::Range<R2> for Foreign<T1, T2, O, J, F, R>
+where
+    T1: Table,
+    T2: Table + Instance,
+    O: Outcome,
+    J: BuildPredicate,
+    F: BuildPredicate,
+    R: BuildRange,
+    R2: BuildRange,
+{
+    type Output = Foreign<T1, T2, O, J, F, R2>;
+
+    fn range(self, range: R2) -> Self::Output {
+        Self::Output {
+            source_table: std::marker::PhantomData,
+            foreign_table: std::marker::PhantomData,
+            outcome: std::marker::PhantomData,
+            join: self.join,
+            filter: self.filter,
+            range,
+        }
+    }
+}
+
+impl<T1, T2, O, J, F, R> ProjectFrom for Foreign<T1, T2, O, J, F, R>
+where
+    T1: Table,
+    T2: Table,
+    O: Outcome,
+    J: BuildPredicate,
+    F: BuildPredicate,
+    R: BuildRange,
 {
     type Table = T1;
     type Outcome = O;
 }
 
-impl<T1, T2, O> ProjectForeign for Foreign<T1, T2, O>
+impl<T1, T2, O, J, F, R> IntoPredicates for Foreign<T1, T2, O, J, F, R>
+where
+    T1: Table,
+    T2: Table,
+    O: Outcome,
+    J: BuildPredicate,
+{
+    type Join = J;
+    type Filter = ();
+    type Range = ();
+
+    fn into_predicates(self) -> Predicates<Self::Join, Self::Filter, Self::Range> {
+        Predicates {
+            join: self.join,
+            filter: (),
+            range: (),
+        }
+    }
+}
+
+impl<T1, T2, O, J, F, R> ProjectForeign for Foreign<T1, T2, O, J, F, R>
 where
     T1: Table,
     T2: Table + Instance,
     O: Outcome,
+    J: BuildPredicate,
+    F: BuildPredicate,
+    R: BuildRange,
 {
     type ForeignTable = T2;
 }
@@ -241,17 +305,20 @@ pub mod probe_async_graphql {
     {
         fn project_and_probe(self, probing: &Probing) -> UrmResult<()> {
             let foreign_table = PF::ForeignTable::instance();
+            let crate::predicate::Predicates {
+                join,
+                filter,
+                range,
+            } = self.project_foreign.into_predicates();
+
             let sub_select = probing
                 .engine()
                 .query
                 .lock()
-                // FIXME: 'filter predicate':
-                .new_select(foreign_table, None);
+                .new_select(foreign_table, Some(Box::new(filter)));
 
             {
                 let mut proj_lock = probing.select().projection.lock();
-                // FIXME:
-                let join_predicate = crate::expr::Predicate::And(vec![]);
 
                 proj_lock.insert(
                     // FIXME: This should be "dynamic" in some way,
@@ -260,7 +327,7 @@ pub mod probe_async_graphql {
                     LocalId(0),
                     QueryField::Foreign {
                         select: sub_select.clone(),
-                        join_predicate,
+                        join_predicate: Box::new(join),
                     },
                 );
             }

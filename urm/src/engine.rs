@@ -2,6 +2,7 @@ use parking_lot::Mutex;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use crate::build::BuildPredicate;
 use crate::expr;
 use crate::project;
 use crate::query;
@@ -44,7 +45,7 @@ impl QueryEngine {
     pub fn new_select(
         &self,
         from: &'static dyn Table,
-        predicate: Option<expr::Predicate>,
+        predicate: Option<Box<dyn BuildPredicate>>,
     ) -> Arc<Select> {
         Arc::new(Select {
             from: expr::TableAlias {
@@ -104,7 +105,7 @@ pub struct Select {
     pub projection: Mutex<BTreeMap<project::LocalId, QueryField>>,
 
     /// Where clause
-    pub predicate: Option<expr::Predicate>,
+    pub predicate: Option<Box<dyn BuildPredicate>>,
 }
 
 impl Select {
@@ -127,6 +128,6 @@ pub enum QueryField {
     Primitive,
     Foreign {
         select: Arc<Select>,
-        join_predicate: expr::Predicate,
+        join_predicate: Box<dyn BuildPredicate>,
     },
 }

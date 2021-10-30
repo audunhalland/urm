@@ -19,6 +19,7 @@ pub use urm_macros::*;
 pub mod build;
 pub mod expr;
 pub mod filter;
+pub mod predicate;
 pub mod prelude;
 pub mod probe;
 pub mod project;
@@ -36,14 +37,6 @@ pub trait Table: Send + Sync + 'static {
 /// Provide some &'static instance of a type.
 pub trait Instance {
     fn instance() -> &'static Self;
-}
-
-pub trait Filter {
-    type Table: Table;
-
-    fn range<R>(self, range: R) -> Self
-    where
-        R: filter::Range;
 }
 
 pub struct Select<T: Table> {
@@ -81,16 +74,14 @@ where
     }
 }
 
-impl<T> Filter for Select<T>
+impl<T, R> filter::Range<R> for Select<T>
 where
     T: Table,
+    R: build::BuildRange,
 {
-    type Table = T;
+    type Output = Self;
 
-    fn range<R>(self, _r: R) -> Self
-    where
-        R: filter::Range,
-    {
+    fn range(self, range: R) -> Self::Output {
         self
     }
 }

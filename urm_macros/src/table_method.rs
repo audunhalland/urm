@@ -210,7 +210,7 @@ pub fn gen_method(
             );
 
             quote_spanned! {span=>
-                ::urm::expr::Predicate::Eq(#local, #foreign)
+                ::urm::predicate::Eq(#local, #foreign)
             }
         };
 
@@ -244,9 +244,12 @@ pub fn gen_method(
             pub fn #method_ident(#inputs) -> ::urm::project::foreign::Foreign<
                 #local_table_path,
                 #foreign_table_path,
-                ::urm::project::foreign::#outcome<#output_type>
+                ::urm::project::foreign::#outcome<#output_type>,
+                impl ::urm::build::BuildPredicate,
+                (),
+                ()
             > {
-                urm::project::foreign::Foreign::new(#eq_pred)
+                urm::project::foreign::foreign_join(#eq_pred)
             }
         }
     } else {

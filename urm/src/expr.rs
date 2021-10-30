@@ -1,11 +1,4 @@
 #[derive(Clone, Debug)]
-pub enum Predicate {
-    And(Vec<Predicate>),
-    Or(Vec<Predicate>),
-    Eq(Expr, Expr),
-}
-
-#[derive(Clone, Debug)]
 pub enum Expr {
     TableColumn(TableExpr, &'static str),
 }
