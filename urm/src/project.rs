@@ -3,7 +3,7 @@
 //!
 
 use crate::engine::Probing;
-use crate::{Table, UrmResult};
+use crate::{Database, Table, UrmResult};
 
 pub mod foreign;
 pub mod primitive;
@@ -45,6 +45,6 @@ pub trait Outcome: Sized + Send + Sync + 'static {
 ///
 /// Not all `ProjectFrom` types implement `ProjectAndProbe`, and
 /// may need further mapping before reaching this typestate.
-pub trait ProjectAndProbe {
-    fn project_and_probe(self, probing: &Probing) -> UrmResult<()>;
+pub trait ProjectAndProbe<DB: Database> {
+    fn project_and_probe(self, probing: &Probing<DB>) -> UrmResult<()>;
 }

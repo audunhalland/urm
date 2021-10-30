@@ -19,6 +19,7 @@ pub use urm_macros::*;
 pub mod build;
 pub mod expr;
 pub mod filter;
+pub mod postgres;
 pub mod predicate;
 pub mod prelude;
 pub mod probe;
@@ -30,7 +31,11 @@ mod engine;
 mod experiment;
 mod never;
 
+pub trait Database: std::fmt::Debug + Sync + Send + Clone + 'static {}
+
 pub trait Table: Send + Sync + 'static {
+    type DB: Database;
+
     fn name(&self) -> &'static str;
 }
 
@@ -145,12 +150,12 @@ pub type UrmResult<T> = Result<T, UrmError>;
 /// the same asynchronous user-supplied function.
 ///
 pub struct Node<T: Table> {
-    phase: Phase,
+    phase: Phase<T::DB>,
     table: std::marker::PhantomData<T>,
 }
 
 impl<T: Table> Node<T> {
-    pub(crate) fn new_probe(probing: engine::Probing) -> Self {
+    pub(crate) fn new_probe(probing: engine::Probing<T::DB>) -> Self {
         Self {
             phase: Phase::Probe(probing),
             table: std::marker::PhantomData,
@@ -165,8 +170,8 @@ impl<T: Table> Node<T> {
     }
 }
 
-enum Phase {
-    Probe(engine::Probing),
+enum Phase<DB: Database> {
+    Probe(engine::Probing<DB>),
     Deserialize,
 }
 
@@ -203,7 +208,7 @@ pub trait ProjectNode<T: Table> {
 impl<T, F> ProjectNode<T> for F
 where
     T: Table,
-    F: project::ProjectFrom<Table = T> + project::ProjectAndProbe,
+    F: project::ProjectFrom<Table = T> + project::ProjectAndProbe<T::DB>,
 {
     type Output = <F::Outcome as project::Outcome>::Output;
 
@@ -222,8 +227,8 @@ where
 impl<T, F0, F1> ProjectNode<T> for (F0, F1)
 where
     T: Table,
-    F0: project::ProjectFrom<Table = T> + project::ProjectAndProbe,
-    F1: project::ProjectFrom<Table = T> + project::ProjectAndProbe,
+    F0: project::ProjectFrom<Table = T> + project::ProjectAndProbe<T::DB>,
+    F1: project::ProjectFrom<Table = T> + project::ProjectAndProbe<T::DB>,
 {
     type Output = (
         <F0::Outcome as project::Outcome>::Output,

@@ -210,7 +210,7 @@ pub fn gen_method(
             );
 
             quote_spanned! {span=>
-                ::urm::predicate::Eq(#local, #foreign)
+                ::urm::predicate::Eq::<::urm::postgres::Postgres>(#local, #foreign)
             }
         };
 

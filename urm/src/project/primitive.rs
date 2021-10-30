@@ -4,7 +4,7 @@
 
 use super::{LocalId, Outcome, ProjectAndProbe, ProjectFrom};
 use crate::engine::{Probing, QueryField};
-use crate::{Table, UrmResult};
+use crate::{Database, Table, UrmResult};
 
 pub struct Primitive<T, Out> {
     name: &'static str,
@@ -41,12 +41,13 @@ where
     type Outcome = PrimitiveOutcome<Out>;
 }
 
-impl<T, Out> ProjectAndProbe for Primitive<T, Out>
+impl<DB, T, Out> ProjectAndProbe<DB> for Primitive<T, Out>
 where
+    DB: Database,
     T: Table,
     Out: Sized + Send + Sync + 'static,
 {
-    fn project_and_probe(self, probing: &Probing) -> UrmResult<()> {
+    fn project_and_probe(self, probing: &Probing<DB>) -> UrmResult<()> {
         probing
             .select()
             .projection

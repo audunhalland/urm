@@ -6,15 +6,15 @@ use crate::build::BuildPredicate;
 use crate::expr;
 use crate::project;
 use crate::query;
-use crate::{Table, UrmResult};
+use crate::{Database, Table, UrmResult};
 
 #[derive(Clone)]
-pub struct Engine {
-    pub query: Arc<Mutex<QueryEngine>>,
+pub struct Engine<DB: Database> {
+    pub query: Arc<Mutex<QueryEngine<DB>>>,
 }
 
-impl Engine {
-    pub fn new_select(from: &'static dyn Table) -> (Self, Probing) {
+impl<DB: Database> Engine<DB> {
+    pub fn new_select(from: &'static dyn Table<DB = DB>) -> (Self, Probing<DB>) {
         let root_select = Arc::new(Select {
             from: expr::TableAlias {
                 table: from,
@@ -37,16 +37,16 @@ impl Engine {
 }
 
 #[derive(Debug)]
-pub struct QueryEngine {
-    root_select: Arc<Select>,
+pub struct QueryEngine<DB: Database> {
+    root_select: Arc<Select<DB>>,
 }
 
-impl QueryEngine {
+impl<DB: Database> QueryEngine<DB> {
     pub fn new_select(
         &self,
-        from: &'static dyn Table,
+        from: &'static dyn Table<DB = DB>,
         predicate: Option<Box<dyn BuildPredicate>>,
-    ) -> Arc<Select> {
+    ) -> Arc<Select<DB>> {
         Arc::new(Select {
             from: expr::TableAlias {
                 table: from,
@@ -70,21 +70,21 @@ impl QueryEngine {
 /// hands out must be completed by
 /// calling the `complete` method.
 #[derive(Clone)]
-pub struct Probing {
-    engine: Engine,
-    select: Arc<Select>,
+pub struct Probing<DB: Database> {
+    engine: Engine<DB>,
+    select: Arc<Select<DB>>,
 }
 
-impl Probing {
-    pub fn new(engine: Engine, select: Arc<Select>) -> Self {
+impl<DB: Database> Probing<DB> {
+    pub fn new(engine: Engine<DB>, select: Arc<Select<DB>>) -> Self {
         Self { engine, select }
     }
 
-    pub fn engine(&self) -> &Engine {
+    pub fn engine(&self) -> &Engine<DB> {
         &self.engine
     }
 
-    pub fn select(&self) -> &Arc<Select> {
+    pub fn select(&self) -> &Arc<Select<DB>> {
         &self.select
     }
 }
@@ -95,27 +95,27 @@ impl Probing {
 ///
 /// It's an abstraction over an "SQL"-like select expression.
 ///
-pub struct Select {
+pub struct Select<DB: Database> {
     /// TODO: we can have many FROMs in a select.
-    pub from: expr::TableAlias,
+    pub from: expr::TableAlias<DB>,
 
     /// The projection, which is getting built dynamically. Eh...
     /// TODO: Does the projection contain all child "queries"?
     /// not likely.
-    pub projection: Mutex<BTreeMap<project::LocalId, QueryField>>,
+    pub projection: Mutex<BTreeMap<project::LocalId, QueryField<DB>>>,
 
     /// Where clause
     pub predicate: Option<Box<dyn BuildPredicate>>,
 }
 
-impl Select {
+impl<DB: Database> Select<DB> {
     fn build_query(&self, builder: &mut dyn query::QueryBuilder) {
         builder.enter_select();
         builder.exit_select();
     }
 }
 
-impl std::fmt::Debug for Select {
+impl<DB: Database> std::fmt::Debug for Select<DB> {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
         let lock = self.projection.lock();
         write!(fmt, "SELECT From '{}' {:?}", self.from.table.name(), *lock)?;
@@ -124,10 +124,10 @@ impl std::fmt::Debug for Select {
 }
 
 #[derive(Debug)]
-pub enum QueryField {
+pub enum QueryField<DB: Database> {
     Primitive,
     Foreign {
-        select: Arc<Select>,
+        select: Arc<Select<DB>>,
         join_predicate: Box<dyn BuildPredicate>,
     },
 }

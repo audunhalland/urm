@@ -1,5 +1,6 @@
 use crate::build::{BuildPredicate, BuildRange};
 use crate::expr::Expr;
+use crate::Database;
 
 pub struct Predicates<J, F, R> {
     pub join: J,
@@ -16,9 +17,9 @@ pub trait IntoPredicates {
 }
 
 #[derive(Debug)]
-pub struct Eq(pub Expr, pub Expr);
+pub struct Eq<DB: Database>(pub Expr<DB>, pub Expr<DB>);
 
-impl BuildPredicate for Eq {
+impl<DB: Database> BuildPredicate for Eq<DB> {
     fn build_predicate(&self, builder: &mut crate::build::QueryBuilder) {
         self.0.build_expr(builder);
         builder.push_str(" = ");

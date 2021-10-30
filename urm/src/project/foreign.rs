@@ -9,7 +9,7 @@ use crate::filter;
 use crate::predicate::{IntoPredicates, Predicates};
 use crate::quantify;
 use crate::quantify::Quantify;
-use crate::{Instance, Node, Table, UrmResult};
+use crate::{Database, Instance, Node, Probe, Table, UrmResult};
 
 /// 'FlatMap' some Outcome into the type `U`
 /// having the desired quantification.
@@ -294,16 +294,18 @@ pub mod probe_async_graphql {
         type Outcome = MapToProbe<F, PF::Outcome, P>;
     }
 
-    impl<'c, PF, F, P> ProjectAndProbe for ForeignProbe<'c, PF, F, P>
+    impl<'c, DB, PF, F, P> ProjectAndProbe<DB> for ForeignProbe<'c, PF, F, P>
     where
+        DB: Database,
         PF: ProjectForeign,
+        PF::ForeignTable: Table<DB = DB>,
         PF::Outcome: Outcome<Unit = Node<PF::ForeignTable>> + FlatMapOutcome<P>,
         <<PF::Outcome as FlatMapOutcome<P>>::Quantify as Quantify<P>>::Output:
             Send + Sync + 'static,
         F: (Fn(<PF::Outcome as Outcome>::Unit) -> P) + Send + Sync + 'static,
-        P: async_graphql::ContainerType + Send + Sync + 'static,
+        P: Probe + async_graphql::ContainerType + Send + Sync + 'static,
     {
-        fn project_and_probe(self, probing: &Probing) -> UrmResult<()> {
+        fn project_and_probe(self, probing: &Probing<DB>) -> UrmResult<()> {
             let foreign_table = PF::ForeignTable::instance();
             let crate::predicate::Predicates {
                 join,
