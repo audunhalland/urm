@@ -45,7 +45,7 @@ impl<DB: Database> QueryEngine<DB> {
     pub fn new_select(
         &self,
         from: &'static dyn Table<DB = DB>,
-        predicate: Option<Box<dyn BuildPredicate>>,
+        predicate: Option<Box<dyn BuildPredicate<DB>>>,
     ) -> Arc<Select<DB>> {
         Arc::new(Select {
             from: expr::TableAlias {
@@ -105,7 +105,7 @@ pub struct Select<DB: Database> {
     pub projection: Mutex<BTreeMap<project::LocalId, QueryField<DB>>>,
 
     /// Where clause
-    pub predicate: Option<Box<dyn BuildPredicate>>,
+    pub predicate: Option<Box<dyn BuildPredicate<DB>>>,
 }
 
 impl<DB: Database> Select<DB> {
@@ -128,6 +128,6 @@ pub enum QueryField<DB: Database> {
     Primitive,
     Foreign {
         select: Arc<Select<DB>>,
-        join_predicate: Box<dyn BuildPredicate>,
+        join_predicate: Box<dyn BuildPredicate<DB>>,
     },
 }

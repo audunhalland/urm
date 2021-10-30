@@ -79,10 +79,10 @@ where
     }
 }
 
-impl<T, R> filter::Range<R> for Select<T>
+impl<T, R> filter::Range<T::DB, R> for Select<T>
 where
     T: Table,
-    R: build::BuildRange,
+    R: build::BuildRange<T::DB>,
 {
     type Output = Self;
 

@@ -7,7 +7,7 @@ pub enum Expr<DB: Database> {
 }
 
 impl<DB: Database> Expr<DB> {
-    pub fn build_expr(&self, builder: &mut QueryBuilder) {}
+    pub fn build_expr(&self, builder: &mut QueryBuilder<DB>) {}
 }
 
 #[derive(Clone, Debug)]

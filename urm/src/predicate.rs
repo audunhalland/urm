@@ -8,10 +8,10 @@ pub struct Predicates<J, F, R> {
     pub range: R,
 }
 
-pub trait IntoPredicates {
-    type Join: BuildPredicate;
-    type Filter: BuildPredicate;
-    type Range: BuildRange;
+pub trait IntoPredicates<DB: Database> {
+    type Join: BuildPredicate<DB>;
+    type Filter: BuildPredicate<DB>;
+    type Range: BuildRange<DB>;
 
     fn into_predicates(self) -> Predicates<Self::Join, Self::Filter, Self::Range>;
 }
@@ -19,8 +19,8 @@ pub trait IntoPredicates {
 #[derive(Debug)]
 pub struct Eq<DB: Database>(pub Expr<DB>, pub Expr<DB>);
 
-impl<DB: Database> BuildPredicate for Eq<DB> {
-    fn build_predicate(&self, builder: &mut crate::build::QueryBuilder) {
+impl<DB: Database> BuildPredicate<DB> for Eq<DB> {
+    fn build_predicate(&self, builder: &mut crate::build::QueryBuilder<DB>) {
         self.0.build_expr(builder);
         builder.push_str(" = ");
         self.1.build_expr(builder);
@@ -28,4 +28,4 @@ impl<DB: Database> BuildPredicate for Eq<DB> {
 }
 
 #[derive(Debug)]
-pub struct And(pub Vec<Box<dyn BuildPredicate>>);
+pub struct And<DB: Database>(pub Vec<Box<dyn BuildPredicate<DB>>>);

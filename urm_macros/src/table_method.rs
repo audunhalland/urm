@@ -245,7 +245,7 @@ pub fn gen_method(
                 #local_table_path,
                 #foreign_table_path,
                 ::urm::project::foreign::#outcome<#output_type>,
-                impl ::urm::build::BuildPredicate,
+                impl ::urm::build::BuildPredicate<::urm::postgres::Postgres>,
                 (),
                 ()
             > {

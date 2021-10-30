@@ -17,7 +17,7 @@ pub trait FlatMapOutcome<U>: Outcome {
     type Quantify: Quantify<U>;
 }
 
-pub trait ProjectForeign: ProjectFrom + IntoPredicates {
+pub trait ProjectForeign: ProjectFrom + IntoPredicates<<Self::ForeignTable as Table>::DB> {
     type ForeignTable: Table + Instance;
 
     ///
@@ -64,7 +64,7 @@ where
     T1: Table,
     T2: Table,
     O: Outcome,
-    J: BuildPredicate,
+    J: BuildPredicate<T1::DB>,
 {
     Foreign {
         source_table: std::marker::PhantomData,
@@ -76,15 +76,15 @@ where
     }
 }
 
-impl<T1, T2, O, J, F, F2, R> filter::Filter<F2> for Foreign<T1, T2, O, J, F, R>
+impl<T1, T2, O, J, F, F2, R> filter::Filter<T2::DB, F2> for Foreign<T1, T2, O, J, F, R>
 where
     T1: Table,
     T2: Table + Instance,
     O: Outcome,
-    J: BuildPredicate,
-    F: BuildPredicate,
-    F2: BuildPredicate,
-    R: BuildRange,
+    J: BuildPredicate<T1::DB>,
+    F: BuildPredicate<T2::DB>,
+    F2: BuildPredicate<T2::DB>,
+    R: BuildRange<T2::DB>,
 {
     type Output = Foreign<T1, T2, O, J, F2, R>;
 
@@ -100,15 +100,15 @@ where
     }
 }
 
-impl<T1, T2, O, J, F, R, R2> filter::Range<R2> for Foreign<T1, T2, O, J, F, R>
+impl<T1, T2, O, J, F, R, R2> filter::Range<T2::DB, R2> for Foreign<T1, T2, O, J, F, R>
 where
     T1: Table,
     T2: Table + Instance,
     O: Outcome,
-    J: BuildPredicate,
-    F: BuildPredicate,
-    R: BuildRange,
-    R2: BuildRange,
+    J: BuildPredicate<T1::DB>,
+    F: BuildPredicate<T2::DB>,
+    R: BuildRange<T2::DB>,
+    R2: BuildRange<T2::DB>,
 {
     type Output = Foreign<T1, T2, O, J, F, R2>;
 
@@ -129,20 +129,20 @@ where
     T1: Table,
     T2: Table,
     O: Outcome,
-    J: BuildPredicate,
-    F: BuildPredicate,
-    R: BuildRange,
+    J: BuildPredicate<T1::DB>,
+    F: BuildPredicate<T2::DB>,
+    R: BuildRange<T2::DB>,
 {
     type Table = T1;
     type Outcome = O;
 }
 
-impl<T1, T2, O, J, F, R> IntoPredicates for Foreign<T1, T2, O, J, F, R>
+impl<T1, T2, O, J, F, R> IntoPredicates<T2::DB> for Foreign<T1, T2, O, J, F, R>
 where
     T1: Table,
-    T2: Table,
+    T2: Table<DB = T1::DB>,
     O: Outcome,
-    J: BuildPredicate,
+    J: BuildPredicate<T1::DB>,
 {
     type Join = J;
     type Filter = ();
@@ -160,11 +160,11 @@ where
 impl<T1, T2, O, J, F, R> ProjectForeign for Foreign<T1, T2, O, J, F, R>
 where
     T1: Table,
-    T2: Table + Instance,
+    T2: Table<DB = T1::DB> + Instance,
     O: Outcome,
-    J: BuildPredicate,
-    F: BuildPredicate,
-    R: BuildRange,
+    J: BuildPredicate<T1::DB>,
+    F: BuildPredicate<T2::DB>,
+    R: BuildRange<T2::DB>,
 {
     type ForeignTable = T2;
 }
