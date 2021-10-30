@@ -1,6 +1,12 @@
+use crate::build::QueryBuilder;
+
 #[derive(Clone, Debug)]
 pub enum Expr {
     TableColumn(TableExpr, &'static str),
+}
+
+impl Expr {
+    pub fn build_expr(&self, builder: &mut QueryBuilder) {}
 }
 
 #[derive(Clone, Debug)]

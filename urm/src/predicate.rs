@@ -19,7 +19,11 @@ pub trait IntoPredicates {
 pub struct Eq(pub Expr, pub Expr);
 
 impl BuildPredicate for Eq {
-    fn build_predicate(&self, _builder: &mut crate::build::QueryBuilder) {}
+    fn build_predicate(&self, builder: &mut crate::build::QueryBuilder) {
+        self.0.build_expr(builder);
+        builder.push_str(" = ");
+        self.1.build_expr(builder);
+    }
 }
 
 #[derive(Debug)]

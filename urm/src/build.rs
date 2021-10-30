@@ -8,6 +8,10 @@ pub trait BuildRange: std::fmt::Debug + Send + Sync + 'static {
 
 pub struct QueryBuilder {}
 
+impl QueryBuilder {
+    pub fn push_str(&mut self, str: &str) {}
+}
+
 impl BuildPredicate for () {
     fn build_predicate(&self, _builder: &mut QueryBuilder) {}
 }
