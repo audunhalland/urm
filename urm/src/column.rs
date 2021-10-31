@@ -3,7 +3,8 @@
 //!
 
 use crate::engine::{Probing, QueryField};
-use crate::project::{LocalId, Outcome, ProjectAndProbe, ProjectFrom};
+use crate::project::{LocalId, ProjectAndProbe, ProjectFrom};
+use crate::ty::Type;
 use crate::{Database, Table, UrmResult};
 
 pub struct Column<T, Out> {
@@ -38,7 +39,7 @@ where
     Out: Sized + Send + Sync + 'static,
 {
     type Table = T;
-    type Outcome = PrimitiveOutcome<Out>;
+    type Ty = PrimitiveType<Out>;
 }
 
 impl<DB, T, Out> ProjectAndProbe<DB> for Column<T, Out>
@@ -60,11 +61,11 @@ where
 ///
 /// Primitive outcome is just the value of a 'column', no fancy type mapping.
 ///
-pub struct PrimitiveOutcome<Out> {
+pub struct PrimitiveType<Out> {
     out: std::marker::PhantomData<Out>,
 }
 
-impl<Out> Outcome for PrimitiveOutcome<Out>
+impl<Out> Type for PrimitiveType<Out>
 where
     Out: Send + Sync + 'static,
 {

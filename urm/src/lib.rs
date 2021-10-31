@@ -27,6 +27,7 @@ pub mod prelude;
 pub mod probe;
 pub mod project;
 pub mod quantify;
+pub mod ty;
 
 mod engine;
 mod experiment;
@@ -226,7 +227,7 @@ where
     T: Table,
     F: project::ProjectFrom<Table = T> + project::ProjectAndProbe<T::DB>,
 {
-    type Output = <F::Outcome as project::Outcome>::Output;
+    type Output = <F::Ty as ty::Type>::Output;
 
     async fn project_node(self, node: &Node<T>) -> UrmResult<Self::Output> {
         match &node.phase {
@@ -246,10 +247,7 @@ where
     F0: project::ProjectFrom<Table = T> + project::ProjectAndProbe<T::DB>,
     F1: project::ProjectFrom<Table = T> + project::ProjectAndProbe<T::DB>,
 {
-    type Output = (
-        <F0::Outcome as project::Outcome>::Output,
-        <F1::Outcome as project::Outcome>::Output,
-    );
+    type Output = (<F0::Ty as ty::Type>::Output, <F1::Ty as ty::Type>::Output);
 
     async fn project_node(self, node: &Node<T>) -> UrmResult<Self::Output> {
         match &node.phase {

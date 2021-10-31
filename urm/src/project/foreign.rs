@@ -2,27 +2,22 @@
 //! Foreign projection.
 //!
 
-use super::{LocalId, Outcome, ProjectAndProbe, ProjectFrom};
+use super::{LocalId, ProjectAndProbe, ProjectFrom};
 use crate::build::{BuildPredicate, BuildRange};
 use crate::engine::{Probing, QueryField};
 use crate::filter;
 use crate::predicate::{IntoPredicates, Predicates};
 use crate::quantify;
 use crate::quantify::Quantify;
+use crate::ty::{FlatMapTo, Type};
 use crate::{Database, Instance, Node, Probe, Table, UrmResult};
-
-/// 'FlatMap' some Outcome into the type `U`
-/// having the desired quantification.
-pub trait FlatMapOutcome<U>: Outcome {
-    type Quantify: Quantify<U>;
-}
 
 pub trait ProjectForeign: ProjectFrom + IntoPredicates<<Self::ForeignTable as Table>::DB> {
     type ForeignTable: Table + Instance;
 
     ///
     /// Probe this Foreign, effectively mapping the original
-    /// outcome type to the probe-able outcome type `P`.
+    /// type to the probe-able type `P`.
     ///
     #[cfg(feature = "async_graphql")]
     fn probe_with<'c, F, P>(
@@ -31,8 +26,8 @@ pub trait ProjectForeign: ProjectFrom + IntoPredicates<<Self::ForeignTable as Ta
         ctx: &'c ::async_graphql::context::Context<'_>,
     ) -> probe_async_graphql::ForeignProbe<'c, Self, F, P>
     where
-        Self::Outcome: Outcome<Unit = Node<Self::ForeignTable>> + FlatMapOutcome<P>,
-        F: Fn(<Self::Outcome as Outcome>::Unit) -> P,
+        Self::Ty: Type<Unit = Node<Self::ForeignTable>> + FlatMapTo<P>,
+        F: Fn(<Self::Ty as Type>::Unit) -> P,
         P: async_graphql::ContainerType,
     {
         let map_to_probe = MapToProbe::new(func);
@@ -50,49 +45,49 @@ trait IntoForeignPredicates {}
 /// `T2` is the inner table.
 /// `O` is the original outcome of the mapping (having Unit type `Node<T2>` for probing to work).
 ///
-pub struct Foreign<T1, T2, O, J, F, R> {
+pub struct Foreign<T1, T2, Ty, J, F, R> {
     source_table: std::marker::PhantomData<T1>,
     foreign_table: std::marker::PhantomData<T2>,
-    outcome: std::marker::PhantomData<O>,
+    ty: std::marker::PhantomData<Ty>,
     join: J,
     filter: F,
     range: R,
 }
 
-pub fn foreign_join<T1, T2, O, J>(join: J) -> Foreign<T1, T2, O, J, (), ()>
+pub fn foreign_join<T1, T2, Ty, J>(join: J) -> Foreign<T1, T2, Ty, J, (), ()>
 where
     T1: Table,
     T2: Table,
-    O: Outcome,
+    Ty: Type,
     J: BuildPredicate<T1::DB>,
 {
     Foreign {
         source_table: std::marker::PhantomData,
         foreign_table: std::marker::PhantomData,
-        outcome: std::marker::PhantomData,
+        ty: std::marker::PhantomData,
         join,
         filter: (),
         range: (),
     }
 }
 
-impl<T1, T2, O, J, F, F2, R> filter::Filter<T2::DB, F2> for Foreign<T1, T2, O, J, F, R>
+impl<T1, T2, Ty, J, F, F2, R> filter::Filter<T2::DB, F2> for Foreign<T1, T2, Ty, J, F, R>
 where
     T1: Table,
     T2: Table + Instance,
-    O: Outcome,
+    Ty: Type,
     J: BuildPredicate<T1::DB>,
     F: BuildPredicate<T2::DB>,
     F2: BuildPredicate<T2::DB>,
     R: BuildRange<T2::DB>,
 {
-    type Output = Foreign<T1, T2, O, J, F2, R>;
+    type Output = Foreign<T1, T2, Ty, J, F2, R>;
 
     fn filter(self, filter: F2) -> Self::Output {
         Self::Output {
             source_table: std::marker::PhantomData,
             foreign_table: std::marker::PhantomData,
-            outcome: std::marker::PhantomData,
+            ty: std::marker::PhantomData,
             join: self.join,
             filter,
             range: self.range,
@@ -100,23 +95,23 @@ where
     }
 }
 
-impl<T1, T2, O, J, F, R, R2> filter::Range<T2::DB, R2> for Foreign<T1, T2, O, J, F, R>
+impl<T1, T2, Ty, J, F, R, R2> filter::Range<T2::DB, R2> for Foreign<T1, T2, Ty, J, F, R>
 where
     T1: Table,
     T2: Table + Instance,
-    O: Outcome,
+    Ty: Type,
     J: BuildPredicate<T1::DB>,
     F: BuildPredicate<T2::DB>,
     R: BuildRange<T2::DB>,
     R2: BuildRange<T2::DB>,
 {
-    type Output = Foreign<T1, T2, O, J, F, R2>;
+    type Output = Foreign<T1, T2, Ty, J, F, R2>;
 
     fn range(self, range: R2) -> Self::Output {
         Self::Output {
             source_table: std::marker::PhantomData,
             foreign_table: std::marker::PhantomData,
-            outcome: std::marker::PhantomData,
+            ty: std::marker::PhantomData,
             join: self.join,
             filter: self.filter,
             range,
@@ -124,24 +119,24 @@ where
     }
 }
 
-impl<T1, T2, O, J, F, R> ProjectFrom for Foreign<T1, T2, O, J, F, R>
+impl<T1, T2, Ty, J, F, R> ProjectFrom for Foreign<T1, T2, Ty, J, F, R>
 where
     T1: Table,
     T2: Table,
-    O: Outcome,
+    Ty: Type,
     J: BuildPredicate<T1::DB>,
     F: BuildPredicate<T2::DB>,
     R: BuildRange<T2::DB>,
 {
     type Table = T1;
-    type Outcome = O;
+    type Ty = Ty;
 }
 
-impl<T1, T2, O, J, F, R> IntoPredicates<T2::DB> for Foreign<T1, T2, O, J, F, R>
+impl<T1, T2, Ty, J, F, R> IntoPredicates<T2::DB> for Foreign<T1, T2, Ty, J, F, R>
 where
     T1: Table,
     T2: Table<DB = T1::DB>,
-    O: Outcome,
+    Ty: Type,
     J: BuildPredicate<T1::DB>,
 {
     type Join = J;
@@ -157,11 +152,11 @@ where
     }
 }
 
-impl<T1, T2, O, J, F, R> ProjectForeign for Foreign<T1, T2, O, J, F, R>
+impl<T1, T2, Ty, J, F, R> ProjectForeign for Foreign<T1, T2, Ty, J, F, R>
 where
     T1: Table,
     T2: Table<DB = T1::DB> + Instance,
-    O: Outcome,
+    Ty: Type,
     J: BuildPredicate<T1::DB>,
     F: BuildPredicate<T2::DB>,
     R: BuildRange<T2::DB>,
@@ -174,12 +169,12 @@ pub struct OneToOne<T2: Table> {
     foreign: std::marker::PhantomData<T2>,
 }
 
-impl<T2: Table> Outcome for OneToOne<T2> {
+impl<T2: Table> Type for OneToOne<T2> {
     type Unit = Node<T2>;
     type Output = Node<T2>;
 }
 
-impl<T2: Table, U> FlatMapOutcome<U> for OneToOne<T2> {
+impl<T2: Table, U> FlatMapTo<U> for OneToOne<T2> {
     type Quantify = quantify::AsSelf;
 }
 
@@ -188,12 +183,12 @@ pub struct OneToOption<T2: Table> {
     foreign: std::marker::PhantomData<T2>,
 }
 
-impl<T2: Table> Outcome for OneToOption<T2> {
+impl<T2: Table> Type for OneToOption<T2> {
     type Unit = Node<T2>;
     type Output = Option<Node<T2>>;
 }
 
-impl<T2: Table, U> FlatMapOutcome<U> for OneToOption<T2> {
+impl<T2: Table, U> FlatMapTo<U> for OneToOption<T2> {
     type Quantify = quantify::AsOption;
 }
 
@@ -202,12 +197,12 @@ pub struct OneToMany<T2: Table> {
     foreign: std::marker::PhantomData<T2>,
 }
 
-impl<T2: Table> Outcome for OneToMany<T2> {
+impl<T2: Table> Type for OneToMany<T2> {
     type Unit = Node<T2>;
     type Output = Vec<Node<T2>>;
 }
 
-impl<T2: Table, U> FlatMapOutcome<U> for OneToMany<T2> {
+impl<T2: Table, U> FlatMapTo<U> for OneToMany<T2> {
     type Quantify = quantify::AsVec;
 }
 
@@ -229,12 +224,12 @@ impl<F, N, P> MapToProbe<F, N, P> {
     }
 }
 
-impl<F, N, P> Outcome for MapToProbe<F, N, P>
+impl<F, N, P> Type for MapToProbe<F, N, P>
 where
     F: Send + Sync + 'static,
-    N: FlatMapOutcome<P>,
+    N: FlatMapTo<P>,
     P: Send + Sync + 'static,
-    <<N as FlatMapOutcome<P>>::Quantify as Quantify<P>>::Output: Send + Sync + 'static,
+    <<N as FlatMapTo<P>>::Quantify as Quantify<P>>::Output: Send + Sync + 'static,
 {
     type Unit = P;
     type Output = <N::Quantify as Quantify<P>>::Output;
@@ -253,7 +248,7 @@ pub mod probe_async_graphql {
         P: async_graphql::ContainerType,
     {
         project_foreign: PF,
-        map_to_probe: MapToProbe<F, <<PF as ProjectFrom>::Outcome as Outcome>::Unit, P>,
+        map_to_probe: MapToProbe<F, <<PF as ProjectFrom>::Ty as Type>::Unit, P>,
         ctx: &'c ::async_graphql::context::Context<'c>,
     }
 
@@ -264,7 +259,7 @@ pub mod probe_async_graphql {
     {
         pub(crate) fn new(
             project_foreign: PF,
-            map_to_probe: MapToProbe<F, <<PF as ProjectFrom>::Outcome as Outcome>::Unit, P>,
+            map_to_probe: MapToProbe<F, <<PF as ProjectFrom>::Ty as Type>::Unit, P>,
             ctx: &'c ::async_graphql::context::Context<'c>,
         ) -> Self {
             Self {
@@ -279,13 +274,12 @@ pub mod probe_async_graphql {
     where
         PF: ProjectForeign,
         F: Send + Sync + 'static,
-        PF::Outcome: FlatMapOutcome<P>,
-        <<PF::Outcome as FlatMapOutcome<P>>::Quantify as Quantify<P>>::Output:
-            Send + Sync + 'static,
+        PF::Ty: FlatMapTo<P>,
+        <<PF::Ty as FlatMapTo<P>>::Quantify as Quantify<P>>::Output: Send + Sync + 'static,
         P: async_graphql::ContainerType + Send + Sync + 'static,
     {
         type Table = PF::Table;
-        type Outcome = MapToProbe<F, PF::Outcome, P>;
+        type Ty = MapToProbe<F, PF::Ty, P>;
     }
 
     impl<'c, DB, PF, F, P> ProjectAndProbe<DB> for ForeignProbe<'c, PF, F, P>
@@ -293,10 +287,9 @@ pub mod probe_async_graphql {
         DB: Database,
         PF: ProjectForeign,
         PF::ForeignTable: Table<DB = DB>,
-        PF::Outcome: Outcome<Unit = Node<PF::ForeignTable>> + FlatMapOutcome<P>,
-        <<PF::Outcome as FlatMapOutcome<P>>::Quantify as Quantify<P>>::Output:
-            Send + Sync + 'static,
-        F: (Fn(<PF::Outcome as Outcome>::Unit) -> P) + Send + Sync + 'static,
+        PF::Ty: Type<Unit = Node<PF::ForeignTable>> + FlatMapTo<P>,
+        <<PF::Ty as FlatMapTo<P>>::Quantify as Quantify<P>>::Output: Send + Sync + 'static,
+        F: (Fn(<PF::Ty as Type>::Unit) -> P) + Send + Sync + 'static,
         P: Probe + async_graphql::ContainerType + Send + Sync + 'static,
     {
         fn project_and_probe(self, probing: &Probing<DB>) -> UrmResult<()> {

@@ -3,6 +3,7 @@
 //!
 
 use crate::engine::Probing;
+use crate::ty::Type;
 use crate::{Database, Table, UrmResult};
 
 pub mod foreign;
@@ -20,20 +21,8 @@ pub trait ProjectFrom: Sized + Send + Sync {
     /// The table projected from
     type Table: Table;
 
-    /// Outcome/value produced by the projection
-    type Outcome: Outcome;
-}
-
-/// Represents the output type/result of a projection.
-/// Because the result of a projection may be a unit type
-/// or a collection type, the `Outcome` trait associates both
-/// types at once, so they can more easily be mapped in more intricate ways.
-pub trait Outcome: Sized + Send + Sync + 'static {
-    /// Unit (unquantified) output of this outcome
-    type Unit: Send + Sync + 'static;
-
-    /// Final, quantified output of this outcome (possibly `Vec<Self::Unit>` or some other collection).
-    type Output: Send + Sync + 'static;
+    /// Data type produced by the projection
+    type Ty: Type;
 }
 
 /// ProjectAndProbe is the trait that is implemented for types
