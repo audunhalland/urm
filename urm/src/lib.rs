@@ -21,6 +21,7 @@ pub mod builder;
 pub mod column;
 pub mod expr;
 pub mod filter;
+pub mod func;
 pub mod postgres;
 pub mod predicate;
 pub mod prelude;

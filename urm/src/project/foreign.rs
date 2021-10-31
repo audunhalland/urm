@@ -206,7 +206,7 @@ impl<T2: Table, U> MapTo<U> for OneToMany<T2> {
     type Quantify = quantify::AsVec;
 }
 
-/// Function wrapper to map from some table node unit `N` into probe `P`,
+/// Function wrapper to map from some table node unit `In` into probe `Out`,
 /// also acting as the Outcome type for this mapping.
 pub struct MapToProbe<In, F, Out> {
     func: F,

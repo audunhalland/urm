@@ -3,6 +3,8 @@ use crate::builder::QueryBuilder;
 use crate::expr::Expr;
 use crate::Database;
 
+pub trait Predicate {}
+
 pub struct Predicates<J, F, R> {
     pub join: J,
     pub filter: F,
