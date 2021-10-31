@@ -256,12 +256,12 @@ pub fn gen_method(
         let field_name = &field.field_name;
         let field_id = field.field_idx as u16;
 
-        let value = match &field.return_type {
+        let ty = match &field.return_type {
             Quantified::Unit(return_type) => match return_type {
                 ReturnType::Zelf(zelf) => {
                     syn::Error::new(zelf.span(), "Expected a type, not Self").to_compile_error()
                 }
-                ReturnType::Path(path) => quote! { #path },
+                ReturnType::Path(path) => quote! { ::urm::ty::Unit<#path> },
             },
             Quantified::Slice(bracket, _) => {
                 syn::Error::new(bracket.span, "Expected non-slice unit type").to_compile_error()
@@ -269,7 +269,7 @@ pub fn gen_method(
         };
 
         quote! {
-            pub fn #method_ident(#inputs) -> ::urm::column::Column<#local_table_path, #value> {
+            pub fn #method_ident(#inputs) -> ::urm::column::Column<#local_table_path, #ty> {
                 ::urm::column::Column::new(
                     #field_name,
                     ::urm::project::LocalId(#field_id)

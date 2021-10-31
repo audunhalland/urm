@@ -43,7 +43,7 @@ trait IntoForeignPredicates {}
 ///
 /// `T1` is the outer table.
 /// `T2` is the inner table.
-/// `O` is the original outcome of the mapping (having Unit type `Node<T2>` for probing to work).
+/// `Ty` is the original outcome of the mapping (having Unit type `Node<T2>` for probing to work).
 ///
 pub struct Foreign<T1, T2, Ty, J, F, R> {
     source_table: std::marker::PhantomData<T1>,

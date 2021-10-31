@@ -17,3 +17,25 @@ pub trait Type: Sized + Send + Sync + 'static {
 pub trait FlatMapTo<U>: Type {
     type Quantify: Quantify<U>;
 }
+
+/// Non-nullable unit type
+pub struct Unit<T>(std::marker::PhantomData<T>);
+
+impl<T> Type for Unit<T>
+where
+    T: Send + Sync + 'static,
+{
+    type Unit = T;
+    type Output = T;
+}
+
+/// Nullable type
+pub struct Nullable<U>(std::marker::PhantomData<U>);
+
+impl<T> Type for Nullable<T>
+where
+    T: Send + Sync + 'static,
+{
+    type Unit = T;
+    type Output = Option<T>;
+}

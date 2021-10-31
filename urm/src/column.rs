@@ -7,17 +7,17 @@ use crate::project::{LocalId, ProjectAndProbe, ProjectFrom};
 use crate::ty::Type;
 use crate::{Database, Table, UrmResult};
 
-pub struct Column<T, Out> {
+pub struct Column<T, Ty> {
     name: &'static str,
     local_id: LocalId,
     table: std::marker::PhantomData<T>,
-    out: std::marker::PhantomData<Out>,
+    ty: std::marker::PhantomData<Ty>,
 }
 
-impl<T, Out> Column<T, Out>
+impl<T, Ty> Column<T, Ty>
 where
     T: Table,
-    Out: Sized + Send + Sync + 'static,
+    Ty: Sized + Send + Sync + 'static,
 {
     pub fn name(&self) -> &'static str {
         self.name
@@ -28,18 +28,18 @@ where
             name,
             local_id,
             table: std::marker::PhantomData,
-            out: std::marker::PhantomData,
+            ty: std::marker::PhantomData,
         }
     }
 }
 
-impl<T, Out> ProjectFrom for Column<T, Out>
+impl<T, Ty> ProjectFrom for Column<T, Ty>
 where
     T: Table,
-    Out: Sized + Send + Sync + 'static,
+    Ty: Type,
 {
     type Table = T;
-    type Ty = PrimitiveType<Out>;
+    type Ty = Ty;
 }
 
 impl<DB, T, Out> ProjectAndProbe<DB> for Column<T, Out>
@@ -56,19 +56,4 @@ where
             .insert(self.local_id, QueryField::Primitive);
         Ok(())
     }
-}
-
-///
-/// Primitive outcome is just the value of a 'column', no fancy type mapping.
-///
-pub struct PrimitiveType<Out> {
-    out: std::marker::PhantomData<Out>,
-}
-
-impl<Out> Type for PrimitiveType<Out>
-where
-    Out: Send + Sync + 'static,
-{
-    type Unit = Out;
-    type Output = Out;
 }
