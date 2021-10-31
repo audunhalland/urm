@@ -58,3 +58,10 @@ where
 {
     type Quantify = quantify::AsOption;
 }
+
+pub struct Bool;
+
+impl Type for Bool {
+    type Unit = bool;
+    type Output = bool;
+}

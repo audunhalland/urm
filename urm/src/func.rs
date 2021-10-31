@@ -3,7 +3,7 @@
 //!
 //!
 
-use crate::ty::Type;
+use crate::ty::{Bool, Type, Typed};
 
 pub trait Unary {}
 
@@ -12,11 +12,11 @@ pub trait Binary<T, U> {}
 #[derive(Debug)]
 pub struct Eq<L, R>(pub L, pub R);
 
-impl<L, R> Type for Eq<L, R>
+impl<L, R> Typed for Eq<L, R>
 where
-    L: Type,
-    R: Type<Unit = L::Unit>,
+    L: Typed,
+    R: Typed,
+    L::Ty: Type<Output = <R::Ty as Type>::Output>,
 {
-    type Unit = bool;
-    type Output = bool;
+    type Ty = Bool;
 }

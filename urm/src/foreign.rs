@@ -45,131 +45,120 @@ trait IntoForeignPredicates {}
 /// `T2` is the inner table.
 /// `Ty` is the original outcome of the mapping (having Unit type `Node<T2>` for probing to work).
 ///
-pub struct Foreign<T1, T2, Ty, J, F, R> {
+pub struct Foreign<T1, T2, Ty, W, R> {
     source_table: std::marker::PhantomData<T1>,
     foreign_table: std::marker::PhantomData<T2>,
     ty: std::marker::PhantomData<Ty>,
-    join: J,
-    filter: F,
+    filter: W,
     range: R,
 }
 
-pub fn foreign_join<T1, T2, Ty, J>(join: J) -> Foreign<T1, T2, Ty, J, (), ()>
+pub fn foreign<T1, T2, Ty, W>(filter: W) -> Foreign<T1, T2, Ty, W, ()>
 where
     T1: Table,
     T2: Table,
     Ty: Type,
-    J: BuildPredicate<T1::DB>,
+    W: BuildPredicate<T1::DB>,
 {
     Foreign {
         source_table: std::marker::PhantomData,
         foreign_table: std::marker::PhantomData,
         ty: std::marker::PhantomData,
-        join,
-        filter: (),
+        filter,
         range: (),
     }
 }
 
-impl<T1, T2, Ty, J, F, F2, R> filter::Filter<T2::DB, F2> for Foreign<T1, T2, Ty, J, F, R>
+impl<T1, T2, Ty, W, W2, R> filter::Filter<T2::DB, W2> for Foreign<T1, T2, Ty, W, R>
 where
     T1: Table,
     T2: Table + Instance,
     Ty: Type,
-    J: BuildPredicate<T1::DB>,
-    F: BuildPredicate<T2::DB>,
-    F2: BuildPredicate<T2::DB>,
+    W: BuildPredicate<T2::DB>,
+    W2: BuildPredicate<T2::DB>,
     R: BuildRange<T2::DB>,
 {
-    type Output = Foreign<T1, T2, Ty, J, F2, R>;
+    type Output = Foreign<T1, T2, Ty, W2, R>;
 
-    fn filter(self, filter: F2) -> Self::Output {
+    fn filter(self, filter: W2) -> Self::Output {
         Self::Output {
             source_table: std::marker::PhantomData,
             foreign_table: std::marker::PhantomData,
             ty: std::marker::PhantomData,
-            join: self.join,
             filter,
             range: self.range,
         }
     }
 }
 
-impl<T1, T2, Ty, J, F, R, R2> filter::Range<T2::DB, R2> for Foreign<T1, T2, Ty, J, F, R>
+impl<T1, T2, Ty, W, R, R2> filter::Range<T2::DB, R2> for Foreign<T1, T2, Ty, W, R>
 where
     T1: Table,
     T2: Table + Instance,
     Ty: Type,
-    J: BuildPredicate<T1::DB>,
-    F: BuildPredicate<T2::DB>,
+    W: BuildPredicate<T1::DB>,
     R: BuildRange<T2::DB>,
     R2: BuildRange<T2::DB>,
 {
-    type Output = Foreign<T1, T2, Ty, J, F, R2>;
+    type Output = Foreign<T1, T2, Ty, W, R2>;
 
     fn range(self, range: R2) -> Self::Output {
         Self::Output {
             source_table: std::marker::PhantomData,
             foreign_table: std::marker::PhantomData,
             ty: std::marker::PhantomData,
-            join: self.join,
             filter: self.filter,
             range,
         }
     }
 }
 
-impl<T1, T2, Ty, J, F, R> Typed for Foreign<T1, T2, Ty, J, F, R>
+impl<T1, T2, Ty, W, R> Typed for Foreign<T1, T2, Ty, W, R>
 where
     T1: Table,
     T2: Table,
     Ty: Type,
-    J: BuildPredicate<T1::DB>,
-    F: BuildPredicate<T2::DB>,
+    W: BuildPredicate<T1::DB>,
     R: BuildRange<T2::DB>,
 {
     type Ty = Ty;
 }
 
-impl<T1, T2, Ty, J, F, R> ProjectFrom for Foreign<T1, T2, Ty, J, F, R>
+impl<T1, T2, Ty, W, R> ProjectFrom for Foreign<T1, T2, Ty, W, R>
 where
     T1: Table,
     T2: Table,
     Ty: Type,
-    J: BuildPredicate<T1::DB>,
-    F: BuildPredicate<T2::DB>,
+    W: BuildPredicate<T1::DB>,
     R: BuildRange<T2::DB>,
 {
     type Table = T1;
 }
 
-impl<T1, T2, Ty, J, F, R> IntoPredicates<T2::DB> for Foreign<T1, T2, Ty, J, F, R>
+impl<T1, T2, Ty, W, R> IntoPredicates<T2::DB> for Foreign<T1, T2, Ty, W, R>
 where
     T1: Table,
     T2: Table<DB = T1::DB>,
     Ty: Type,
-    J: BuildPredicate<T1::DB>,
+    W: BuildPredicate<T1::DB>,
 {
-    type Join = J;
-    type Filter = ();
+    type Filter = W;
     type Range = ();
 
-    fn into_predicates(self) -> Predicates<Self::Join, Self::Filter, Self::Range> {
+    fn into_predicates(self) -> Predicates<Self::Filter, Self::Range> {
         Predicates {
-            join: self.join,
-            filter: (),
+            filter: self.filter,
             range: (),
         }
     }
 }
 
-impl<T1, T2, Ty, J, F, R> ProjectForeign for Foreign<T1, T2, Ty, J, F, R>
+impl<T1, T2, Ty, W, R> ProjectForeign for Foreign<T1, T2, Ty, W, R>
 where
     T1: Table,
     T2: Table<DB = T1::DB> + Instance,
     Ty: Type,
-    J: BuildPredicate<T1::DB>,
-    F: BuildPredicate<T2::DB>,
+    W: BuildPredicate<T1::DB>,
     R: BuildRange<T2::DB>,
 {
     type ForeignTable = T2;
@@ -315,11 +304,8 @@ pub mod probe_async_graphql {
     {
         fn project_and_probe(self, probing: &Probing<DB>) -> UrmResult<()> {
             let foreign_table = In::ForeignTable::instance();
-            let crate::predicate::Predicates {
-                join,
-                filter,
-                range,
-            } = self.project_foreign.into_predicates();
+            let crate::predicate::Predicates { filter, range } =
+                self.project_foreign.into_predicates();
 
             let sub_select = probing
                 .engine()
@@ -337,7 +323,7 @@ pub mod probe_async_graphql {
                     LocalId(0),
                     QueryField::Foreign {
                         select: sub_select.clone(),
-                        join_predicate: Box::new(join),
+                        join_predicate: Box::new(()),
                     },
                 );
             }

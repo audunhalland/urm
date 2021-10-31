@@ -5,18 +5,16 @@ use crate::Database;
 
 pub trait Predicate {}
 
-pub struct Predicates<J, F, R> {
-    pub join: J,
-    pub filter: F,
+pub struct Predicates<W, R> {
+    pub filter: W,
     pub range: R,
 }
 
 pub trait IntoPredicates<DB: Database> {
-    type Join: BuildPredicate<DB>;
     type Filter: BuildPredicate<DB>;
     type Range: BuildRange<DB>;
 
-    fn into_predicates(self) -> Predicates<Self::Join, Self::Filter, Self::Range>;
+    fn into_predicates(self) -> Predicates<Self::Filter, Self::Range>;
 }
 
 #[derive(Debug)]

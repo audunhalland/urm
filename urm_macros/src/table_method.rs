@@ -246,10 +246,9 @@ pub fn gen_method(
                 #foreign_table_path,
                 ::urm::foreign::#outcome<#output_type>,
                 impl ::urm::build::BuildPredicate<::urm::postgres::Postgres>,
-                (),
                 ()
             > {
-                urm::foreign::foreign_join(#eq_pred)
+                urm::foreign::foreign(#eq_pred)
             }
         }
     } else {
