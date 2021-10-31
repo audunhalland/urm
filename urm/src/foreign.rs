@@ -36,8 +36,6 @@ pub trait ProjectForeign: ProjectFrom + IntoPredicates<<Self::ForeignTable as Ta
     }
 }
 
-trait IntoForeignPredicates {}
-
 ///
 /// A projection using a _foreign key_, leading into a foreign table.
 ///
@@ -69,6 +67,7 @@ where
     }
 }
 
+// TODO: Only applicable for OneToMany
 impl<T1, T2, Ty, W, W2, R> filter::Filter<T2::DB, W2> for Foreign<T1, T2, Ty, W, R>
 where
     T1: Table,
@@ -85,12 +84,13 @@ where
             source_table: std::marker::PhantomData,
             foreign_table: std::marker::PhantomData,
             ty: std::marker::PhantomData,
-            filter,
+            filter, // TODO: And operator
             range: self.range,
         }
     }
 }
 
+// TODO: Only applicable for OneToMany
 impl<T1, T2, Ty, W, R, R2> filter::Range<T2::DB, R2> for Foreign<T1, T2, Ty, W, R>
 where
     T1: Table,
@@ -141,14 +141,15 @@ where
     T2: Table<DB = T1::DB>,
     Ty: Type,
     W: BuildPredicate<T1::DB>,
+    R: BuildRange<T2::DB>,
 {
     type Filter = W;
-    type Range = ();
+    type Range = R;
 
     fn into_predicates(self) -> Predicates<Self::Filter, Self::Range> {
         Predicates {
             filter: self.filter,
-            range: (),
+            range: self.range,
         }
     }
 }
@@ -323,6 +324,7 @@ pub mod probe_async_graphql {
                     LocalId(0),
                     QueryField::Foreign {
                         select: sub_select.clone(),
+                        // TODO: remove, not used:
                         join_predicate: Box::new(()),
                     },
                 );
