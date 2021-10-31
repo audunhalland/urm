@@ -247,12 +247,6 @@ pub mod probe_async_graphql {
     ///
     /// A foreign projection mapped into a probe-able `async_graphql::ContainerType`.
     ///
-    /// `T1` is the source table.
-    /// `T2` is the target table.
-    /// `O` is the original outcome.
-    /// `F` is a function that maps to the probe type.
-    /// `P` _is_ the probe type, the `ContainerType`.
-    ///
     pub struct ForeignProbe<'c, PF, F, P>
     where
         PF: ProjectForeign,

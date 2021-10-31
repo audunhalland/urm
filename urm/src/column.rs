@@ -2,18 +2,18 @@
 //! Primitive projection of columns/fields.
 //!
 
-use super::{LocalId, Outcome, ProjectAndProbe, ProjectFrom};
 use crate::engine::{Probing, QueryField};
+use crate::project::{LocalId, Outcome, ProjectAndProbe, ProjectFrom};
 use crate::{Database, Table, UrmResult};
 
-pub struct Primitive<T, Out> {
+pub struct Column<T, Out> {
     name: &'static str,
     local_id: LocalId,
     table: std::marker::PhantomData<T>,
     out: std::marker::PhantomData<Out>,
 }
 
-impl<T, Out> Primitive<T, Out>
+impl<T, Out> Column<T, Out>
 where
     T: Table,
     Out: Sized + Send + Sync + 'static,
@@ -32,7 +32,7 @@ where
     }
 }
 
-impl<T, Out> ProjectFrom for Primitive<T, Out>
+impl<T, Out> ProjectFrom for Column<T, Out>
 where
     T: Table,
     Out: Sized + Send + Sync + 'static,
@@ -41,7 +41,7 @@ where
     type Outcome = PrimitiveOutcome<Out>;
 }
 
-impl<DB, T, Out> ProjectAndProbe<DB> for Primitive<T, Out>
+impl<DB, T, Out> ProjectAndProbe<DB> for Column<T, Out>
 where
     DB: Database,
     T: Table,

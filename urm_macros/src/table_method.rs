@@ -269,8 +269,8 @@ pub fn gen_method(
         };
 
         quote! {
-            pub fn #method_ident(#inputs) -> ::urm::project::primitive::Primitive<#local_table_path, #value> {
-                ::urm::project::primitive::Primitive::new(
+            pub fn #method_ident(#inputs) -> ::urm::column::Column<#local_table_path, #value> {
+                ::urm::column::Column::new(
                     #field_name,
                     ::urm::project::LocalId(#field_id)
                 )
