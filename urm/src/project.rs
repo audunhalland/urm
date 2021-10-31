@@ -6,8 +6,6 @@ use crate::engine::Probing;
 use crate::ty::Type;
 use crate::{Database, Table, UrmResult};
 
-pub mod foreign;
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct LocalId(pub u16);
 

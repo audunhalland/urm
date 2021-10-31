@@ -241,15 +241,15 @@ pub fn gen_method(
         };
 
         quote! {
-            pub fn #method_ident(#inputs) -> ::urm::project::foreign::Foreign<
+            pub fn #method_ident(#inputs) -> ::urm::foreign::Foreign<
                 #local_table_path,
                 #foreign_table_path,
-                ::urm::project::foreign::#outcome<#output_type>,
+                ::urm::foreign::#outcome<#output_type>,
                 impl ::urm::build::BuildPredicate<::urm::postgres::Postgres>,
                 (),
                 ()
             > {
-                urm::project::foreign::foreign_join(#eq_pred)
+                urm::foreign::foreign_join(#eq_pred)
             }
         }
     } else {

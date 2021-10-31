@@ -2,11 +2,11 @@
 //! Foreign projection.
 //!
 
-use super::{LocalId, ProjectAndProbe, ProjectFrom};
 use crate::build::{BuildPredicate, BuildRange};
 use crate::engine::{Probing, QueryField};
 use crate::filter;
 use crate::predicate::{IntoPredicates, Predicates};
+use crate::project::{LocalId, ProjectAndProbe, ProjectFrom};
 use crate::quantify;
 use crate::quantify::Quantify;
 use crate::ty::{MapTo, Type};
