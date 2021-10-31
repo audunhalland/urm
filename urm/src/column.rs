@@ -4,7 +4,7 @@
 
 use crate::engine::{Probing, QueryField};
 use crate::project::{LocalId, ProjectAndProbe, ProjectFrom};
-use crate::ty::Type;
+use crate::ty::{Type, Typed};
 use crate::{Database, Table, UrmResult};
 
 pub struct Column<T, Ty> {
@@ -33,13 +33,20 @@ where
     }
 }
 
+impl<T, Ty> Typed for Column<T, Ty>
+where
+    T: Table,
+    Ty: Type,
+{
+    type Ty = Ty;
+}
+
 impl<T, Ty> ProjectFrom for Column<T, Ty>
 where
     T: Table,
     Ty: Type,
 {
     type Table = T;
-    type Ty = Ty;
 }
 
 impl<DB, T, Out> ProjectAndProbe<DB> for Column<T, Out>

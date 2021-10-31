@@ -9,7 +9,7 @@ use crate::predicate::{IntoPredicates, Predicates};
 use crate::project::{LocalId, ProjectAndProbe, ProjectFrom};
 use crate::quantify;
 use crate::quantify::Quantify;
-use crate::ty::{MapTo, Type};
+use crate::ty::{MapTo, Type, Typed};
 use crate::{Database, Instance, Node, Probe, Table, UrmResult};
 
 pub trait ProjectForeign: ProjectFrom + IntoPredicates<<Self::ForeignTable as Table>::DB> {
@@ -119,6 +119,18 @@ where
     }
 }
 
+impl<T1, T2, Ty, J, F, R> Typed for Foreign<T1, T2, Ty, J, F, R>
+where
+    T1: Table,
+    T2: Table,
+    Ty: Type,
+    J: BuildPredicate<T1::DB>,
+    F: BuildPredicate<T2::DB>,
+    R: BuildRange<T2::DB>,
+{
+    type Ty = Ty;
+}
+
 impl<T1, T2, Ty, J, F, R> ProjectFrom for Foreign<T1, T2, Ty, J, F, R>
 where
     T1: Table,
@@ -129,7 +141,6 @@ where
     R: BuildRange<T2::DB>,
 {
     type Table = T1;
-    type Ty = Ty;
 }
 
 impl<T1, T2, Ty, J, F, R> IntoPredicates<T2::DB> for Foreign<T1, T2, Ty, J, F, R>
@@ -248,7 +259,7 @@ pub mod probe_async_graphql {
         Out: async_graphql::ContainerType,
     {
         project_foreign: In,
-        map_to_probe: MapToProbe<<<In as ProjectFrom>::Ty as Type>::Unit, F, Out>,
+        map_to_probe: MapToProbe<<<In as Typed>::Ty as Type>::Unit, F, Out>,
         ctx: &'c ::async_graphql::context::Context<'c>,
     }
 
@@ -259,7 +270,7 @@ pub mod probe_async_graphql {
     {
         pub(crate) fn new(
             project_foreign: In,
-            map_to_probe: MapToProbe<<<In as ProjectFrom>::Ty as Type>::Unit, F, P>,
+            map_to_probe: MapToProbe<<<In as Typed>::Ty as Type>::Unit, F, P>,
             ctx: &'c ::async_graphql::context::Context<'c>,
         ) -> Self {
             Self {
@@ -268,6 +279,17 @@ pub mod probe_async_graphql {
                 ctx,
             }
         }
+    }
+
+    impl<'c, In, F, Out> Typed for ForeignProbe<'c, In, F, Out>
+    where
+        In: ProjectForeign,
+        In::Ty: MapTo<Out>,
+        <<In::Ty as MapTo<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
+        F: Send + Sync + 'static,
+        Out: async_graphql::ContainerType + Send + Sync + 'static,
+    {
+        type Ty = MapToProbe<In::Ty, F, Out>;
     }
 
     impl<'c, In, F, Out> ProjectFrom for ForeignProbe<'c, In, F, Out>
@@ -279,7 +301,6 @@ pub mod probe_async_graphql {
         Out: async_graphql::ContainerType + Send + Sync + 'static,
     {
         type Table = In::Table;
-        type Ty = MapToProbe<In::Ty, F, Out>;
     }
 
     impl<'c, DB, In, F, Out> ProjectAndProbe<DB> for ForeignProbe<'c, In, F, Out>

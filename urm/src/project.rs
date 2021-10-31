@@ -3,7 +3,7 @@
 //!
 
 use crate::engine::Probing;
-use crate::ty::Type;
+use crate::ty::Typed;
 use crate::{Database, Table, UrmResult};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -15,12 +15,9 @@ pub struct LocalId(pub u16);
 ///
 /// To "project" usually means selecting specific columns from a table.
 ///
-pub trait ProjectFrom: Sized + Send + Sync {
+pub trait ProjectFrom: Typed + Sized + Send + Sync {
     /// The table projected from
     type Table: Table;
-
-    /// Data type produced by the projection
-    type Ty: Type;
 }
 
 /// ProjectAndProbe is the trait that is implemented for types

@@ -12,6 +12,11 @@ pub trait Type: Sized + Send + Sync + 'static {
     type Output: Send + Sync + 'static;
 }
 
+/// Any Rust type that should be interpreted as having an urm `Type`
+pub trait Typed {
+    type Ty: Type;
+}
+
 /// 'FlatMap' some Type into the type `U`
 /// having the desired quantification.
 pub trait MapTo<U>: Type {
