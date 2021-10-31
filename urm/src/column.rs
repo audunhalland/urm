@@ -33,7 +33,7 @@ where
     }
 }
 
-impl<T, Ty> Typed for Column<T, Ty>
+impl<T, Ty> Typed<T::DB> for Column<T, Ty>
 where
     T: Table,
     Ty: Type,

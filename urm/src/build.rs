@@ -10,6 +10,10 @@ pub trait BuildPredicate<DB: Database>: std::fmt::Debug + Send + Sync + 'static 
     fn build_predicate(&self, builder: &mut QueryBuilder<DB>, ctx: &Ctx<DB>);
 }
 
+pub trait BuildPredicate2<DB: Database>: std::fmt::Debug + Send + Sync + 'static {
+    fn build_predicate(&self, builder: &mut QueryBuilder<DB>, ctx: &Ctx<DB>);
+}
+
 pub trait BuildRange<DB: Database>: std::fmt::Debug + Send + Sync + 'static {
     fn build_range(&self, builder: &mut QueryBuilder<DB>);
 }

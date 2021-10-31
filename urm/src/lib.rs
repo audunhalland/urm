@@ -35,6 +35,8 @@ mod engine;
 mod experiment;
 mod never;
 
+use ty::Typed;
+
 pub trait Database: std::fmt::Debug + Sync + Send + Clone + 'static {}
 
 pub trait Table: Send + Sync + 'static {
@@ -227,7 +229,7 @@ pub trait ProjectNode<T: Table> {
 impl<T, F> ProjectNode<T> for F
 where
     T: Table,
-    F: project::ProjectFrom<Table = T> + project::ProjectAndProbe<T::DB>,
+    F: project::ProjectFrom<Table = T> + Typed<T::DB> + project::ProjectAndProbe<T::DB>,
 {
     type Output = <F::Ty as ty::Type>::Output;
 
@@ -246,8 +248,8 @@ where
 impl<T, F0, F1> ProjectNode<T> for (F0, F1)
 where
     T: Table,
-    F0: project::ProjectFrom<Table = T> + project::ProjectAndProbe<T::DB>,
-    F1: project::ProjectFrom<Table = T> + project::ProjectAndProbe<T::DB>,
+    F0: project::ProjectFrom<Table = T> + Typed<T::DB> + project::ProjectAndProbe<T::DB>,
+    F1: project::ProjectFrom<Table = T> + Typed<T::DB> + project::ProjectAndProbe<T::DB>,
 {
     type Output = (<F0::Ty as ty::Type>::Output, <F1::Ty as ty::Type>::Output);
 

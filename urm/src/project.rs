@@ -3,7 +3,6 @@
 //!
 
 use crate::engine::Probing;
-use crate::ty::Typed;
 use crate::{Database, Table, UrmResult};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -15,7 +14,7 @@ pub struct LocalId(pub u16);
 ///
 /// To "project" usually means selecting specific columns from a table.
 ///
-pub trait ProjectFrom: Typed + Sized + Send + Sync {
+pub trait ProjectFrom: Sized + Send + Sync {
     /// The table projected from
     type Table: Table;
 }

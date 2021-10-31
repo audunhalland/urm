@@ -1,4 +1,5 @@
 use crate::quantify;
+use crate::Database;
 
 /// Represents the output type/result of a projection.
 /// Because the result of a projection may be a unit type
@@ -13,7 +14,7 @@ pub trait Type: Sized + Send + Sync + 'static {
 }
 
 /// Any Rust type that should be interpreted as having an urm `Type`
-pub trait Typed {
+pub trait Typed<DB: Database> {
     type Ty: Type;
 }
 
