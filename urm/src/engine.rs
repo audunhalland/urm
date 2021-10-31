@@ -8,7 +8,7 @@ use crate::builder;
 use crate::builder::QueryBuilder;
 use crate::expr;
 use crate::project;
-use crate::{Database, Table, UrmResult};
+use crate::{Database, Table};
 
 #[derive(Clone)]
 pub struct Engine<DB: Database> {

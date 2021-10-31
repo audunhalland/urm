@@ -1,4 +1,4 @@
-use crate::quantify::Quantify;
+use crate::quantify;
 
 /// Represents the output type/result of a projection.
 /// Because the result of a projection may be a unit type
@@ -14,8 +14,8 @@ pub trait Type: Sized + Send + Sync + 'static {
 
 /// 'FlatMap' some Type into the type `U`
 /// having the desired quantification.
-pub trait FlatMapTo<U>: Type {
-    type Quantify: Quantify<U>;
+pub trait MapTo<U>: Type {
+    type Quantify: quantify::Quantify<U>;
 }
 
 /// Non-nullable unit type
@@ -29,6 +29,13 @@ where
     type Output = T;
 }
 
+impl<T, U> MapTo<U> for Unit<T>
+where
+    T: Send + Sync + 'static,
+{
+    type Quantify = quantify::AsSelf;
+}
+
 /// Nullable type
 pub struct Nullable<U>(std::marker::PhantomData<U>);
 
@@ -38,4 +45,11 @@ where
 {
     type Unit = T;
     type Output = Option<T>;
+}
+
+impl<T, U> MapTo<U> for Nullable<T>
+where
+    T: Send + Sync + 'static,
+{
+    type Quantify = quantify::AsOption;
 }

@@ -9,7 +9,7 @@ use crate::filter;
 use crate::predicate::{IntoPredicates, Predicates};
 use crate::quantify;
 use crate::quantify::Quantify;
-use crate::ty::{FlatMapTo, Type};
+use crate::ty::{MapTo, Type};
 use crate::{Database, Instance, Node, Probe, Table, UrmResult};
 
 pub trait ProjectForeign: ProjectFrom + IntoPredicates<<Self::ForeignTable as Table>::DB> {
@@ -26,7 +26,7 @@ pub trait ProjectForeign: ProjectFrom + IntoPredicates<<Self::ForeignTable as Ta
         ctx: &'c ::async_graphql::context::Context<'_>,
     ) -> probe_async_graphql::ForeignProbe<'c, Self, F, P>
     where
-        Self::Ty: Type<Unit = Node<Self::ForeignTable>> + FlatMapTo<P>,
+        Self::Ty: Type<Unit = Node<Self::ForeignTable>> + MapTo<P>,
         F: Fn(<Self::Ty as Type>::Unit) -> P,
         P: async_graphql::ContainerType,
     {
@@ -174,7 +174,7 @@ impl<T2: Table> Type for OneToOne<T2> {
     type Output = Node<T2>;
 }
 
-impl<T2: Table, U> FlatMapTo<U> for OneToOne<T2> {
+impl<T2: Table, U> MapTo<U> for OneToOne<T2> {
     type Quantify = quantify::AsSelf;
 }
 
@@ -188,7 +188,7 @@ impl<T2: Table> Type for OneToOption<T2> {
     type Output = Option<Node<T2>>;
 }
 
-impl<T2: Table, U> FlatMapTo<U> for OneToOption<T2> {
+impl<T2: Table, U> MapTo<U> for OneToOption<T2> {
     type Quantify = quantify::AsOption;
 }
 
@@ -202,19 +202,19 @@ impl<T2: Table> Type for OneToMany<T2> {
     type Output = Vec<Node<T2>>;
 }
 
-impl<T2: Table, U> FlatMapTo<U> for OneToMany<T2> {
+impl<T2: Table, U> MapTo<U> for OneToMany<T2> {
     type Quantify = quantify::AsVec;
 }
 
 /// Function wrapper to map from some table node unit `N` into probe `P`,
 /// also acting as the Outcome type for this mapping.
-pub struct MapToProbe<F, N, P> {
+pub struct MapToProbe<In, F, Out> {
     func: F,
-    node_unit: std::marker::PhantomData<N>,
-    probe: std::marker::PhantomData<P>,
+    node_unit: std::marker::PhantomData<In>,
+    probe: std::marker::PhantomData<Out>,
 }
 
-impl<F, N, P> MapToProbe<F, N, P> {
+impl<In, F, Out> MapToProbe<In, F, Out> {
     fn new(func: F) -> Self {
         Self {
             func,
@@ -224,15 +224,15 @@ impl<F, N, P> MapToProbe<F, N, P> {
     }
 }
 
-impl<F, N, P> Type for MapToProbe<F, N, P>
+impl<In, F, Out> Type for MapToProbe<In, F, Out>
 where
+    In: MapTo<Out>,
     F: Send + Sync + 'static,
-    N: FlatMapTo<P>,
-    P: Send + Sync + 'static,
-    <<N as FlatMapTo<P>>::Quantify as Quantify<P>>::Output: Send + Sync + 'static,
+    Out: Send + Sync + 'static,
+    <<In as MapTo<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
 {
-    type Unit = P;
-    type Output = <N::Quantify as Quantify<P>>::Output;
+    type Unit = Out;
+    type Output = <In::Quantify as Quantify<Out>>::Output;
 }
 
 #[cfg(feature = "async_graphql")]
@@ -242,24 +242,24 @@ pub mod probe_async_graphql {
     ///
     /// A foreign projection mapped into a probe-able `async_graphql::ContainerType`.
     ///
-    pub struct ForeignProbe<'c, PF, F, P>
+    pub struct ForeignProbe<'c, In, F, Out>
     where
-        PF: ProjectForeign,
-        P: async_graphql::ContainerType,
+        In: ProjectForeign,
+        Out: async_graphql::ContainerType,
     {
-        project_foreign: PF,
-        map_to_probe: MapToProbe<F, <<PF as ProjectFrom>::Ty as Type>::Unit, P>,
+        project_foreign: In,
+        map_to_probe: MapToProbe<<<In as ProjectFrom>::Ty as Type>::Unit, F, Out>,
         ctx: &'c ::async_graphql::context::Context<'c>,
     }
 
-    impl<'c, PF, F, P> ForeignProbe<'c, PF, F, P>
+    impl<'c, In, F, P> ForeignProbe<'c, In, F, P>
     where
-        PF: ProjectForeign,
+        In: ProjectForeign,
         P: async_graphql::ContainerType,
     {
         pub(crate) fn new(
-            project_foreign: PF,
-            map_to_probe: MapToProbe<F, <<PF as ProjectFrom>::Ty as Type>::Unit, P>,
+            project_foreign: In,
+            map_to_probe: MapToProbe<<<In as ProjectFrom>::Ty as Type>::Unit, F, P>,
             ctx: &'c ::async_graphql::context::Context<'c>,
         ) -> Self {
             Self {
@@ -270,30 +270,30 @@ pub mod probe_async_graphql {
         }
     }
 
-    impl<'c, PF, F, P> ProjectFrom for ForeignProbe<'c, PF, F, P>
+    impl<'c, In, F, Out> ProjectFrom for ForeignProbe<'c, In, F, Out>
     where
-        PF: ProjectForeign,
+        In: ProjectForeign,
+        In::Ty: MapTo<Out>,
+        <<In::Ty as MapTo<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
         F: Send + Sync + 'static,
-        PF::Ty: FlatMapTo<P>,
-        <<PF::Ty as FlatMapTo<P>>::Quantify as Quantify<P>>::Output: Send + Sync + 'static,
-        P: async_graphql::ContainerType + Send + Sync + 'static,
+        Out: async_graphql::ContainerType + Send + Sync + 'static,
     {
-        type Table = PF::Table;
-        type Ty = MapToProbe<F, PF::Ty, P>;
+        type Table = In::Table;
+        type Ty = MapToProbe<In::Ty, F, Out>;
     }
 
-    impl<'c, DB, PF, F, P> ProjectAndProbe<DB> for ForeignProbe<'c, PF, F, P>
+    impl<'c, DB, In, F, Out> ProjectAndProbe<DB> for ForeignProbe<'c, In, F, Out>
     where
         DB: Database,
-        PF: ProjectForeign,
-        PF::ForeignTable: Table<DB = DB>,
-        PF::Ty: Type<Unit = Node<PF::ForeignTable>> + FlatMapTo<P>,
-        <<PF::Ty as FlatMapTo<P>>::Quantify as Quantify<P>>::Output: Send + Sync + 'static,
-        F: (Fn(<PF::Ty as Type>::Unit) -> P) + Send + Sync + 'static,
-        P: Probe + async_graphql::ContainerType + Send + Sync + 'static,
+        In: ProjectForeign,
+        In::ForeignTable: Table<DB = DB>,
+        In::Ty: Type<Unit = Node<In::ForeignTable>> + MapTo<Out>,
+        <<In::Ty as MapTo<Out>>::Quantify as Quantify<Out>>::Output: Send + Sync + 'static,
+        F: (Fn(<In::Ty as Type>::Unit) -> Out) + Send + Sync + 'static,
+        Out: Probe + async_graphql::ContainerType + Send + Sync + 'static,
     {
         fn project_and_probe(self, probing: &Probing<DB>) -> UrmResult<()> {
-            let foreign_table = PF::ForeignTable::instance();
+            let foreign_table = In::ForeignTable::instance();
             let crate::predicate::Predicates {
                 join,
                 filter,
@@ -321,7 +321,7 @@ pub mod probe_async_graphql {
                 );
             }
 
-            let sub_node = Node::<PF::ForeignTable>::new_probe(crate::engine::Probing::new(
+            let sub_node = Node::<In::ForeignTable>::new_probe(crate::engine::Probing::new(
                 probing.engine().clone(),
                 sub_select,
             ));
