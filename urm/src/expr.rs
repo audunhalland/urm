@@ -1,6 +1,5 @@
 use std::fmt::Write;
 
-use crate::build::Ctx;
 use crate::builder::QueryBuilder;
 use crate::Database;
 
@@ -10,10 +9,10 @@ pub enum Expr<DB: Database> {
 }
 
 impl<DB: Database> Expr<DB> {
-    pub fn build_expr(&self, builder: &mut QueryBuilder<DB>, ctx: &Ctx<DB>) {
+    pub fn build_expr(&self, builder: &mut QueryBuilder<DB>) {
         match self {
             Self::TableColumn(table_expr, name) => {
-                table_expr.build(builder, ctx);
+                table_expr.build(builder);
                 builder.push(".");
                 builder.push(name);
             }
@@ -29,10 +28,10 @@ pub enum TableExpr<DB: Database> {
 }
 
 impl<DB: Database> TableExpr<DB> {
-    pub fn build(&self, builder: &mut QueryBuilder<DB>, ctx: &Ctx<DB>) {
+    pub fn build(&self, builder: &mut QueryBuilder<DB>) {
         match self {
-            Self::This => builder.push(ctx.table.name()),
-            Self::Parent => builder.push(ctx.parent_table.as_ref().unwrap().name()),
+            Self::This => builder.push(builder.table.name()),
+            Self::Parent => builder.push(builder.parent_table.as_ref().unwrap().name()),
             Self::Alias(alias) => {
                 write!(builder.buf_mut(), "a{}", alias.alias).unwrap();
             }

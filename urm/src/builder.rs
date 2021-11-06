@@ -1,22 +1,33 @@
-use crate::Database;
+use crate::{Database, Table};
 
-pub struct QueryBuilder<DB: Database> {
+pub struct QueryBuilder<'b, DB: Database> {
     db: std::marker::PhantomData<DB>,
     indent: u16,
-    buf: String,
+    buf: &'b mut String,
+
+    pub table: &'static dyn Table<DB = DB>,
+    pub parent_table: Option<&'static dyn Table<DB = DB>>,
 }
 
-impl<DB: Database> QueryBuilder<DB> {
-    pub fn new() -> Self {
+impl<'b, DB: Database> QueryBuilder<'b, DB> {
+    pub fn new(table: &'static dyn Table<DB = DB>, buf: &'b mut String) -> Self {
         Self {
+            table,
+            parent_table: None,
             db: std::marker::PhantomData,
             indent: 0,
-            buf: String::new(),
+            buf,
         }
     }
 
-    pub fn build(self) -> String {
-        self.buf
+    pub fn push_table(&mut self, table: &'static dyn Table<DB = DB>) -> QueryBuilder<'_, DB> {
+        QueryBuilder {
+            db: std::marker::PhantomData,
+            indent: 0,
+            buf: self.buf,
+            table,
+            parent_table: Some(self.table),
+        }
     }
 
     pub fn buf_mut(&mut self) -> &mut String {

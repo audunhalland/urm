@@ -80,11 +80,10 @@ where
 
         {
             let lock = engine.query.lock();
-            let mut builder = builder::QueryBuilder::new();
+            let mut sql = String::new();
+            let mut builder = builder::QueryBuilder::new(table, &mut sql);
 
             lock.build_query(&mut builder);
-
-            let sql = builder.build();
 
             println!("{}", sql);
 
@@ -226,12 +225,12 @@ pub trait ProjectNode<T: Table> {
 }
 
 #[async_trait]
-impl<T, F> ProjectNode<T> for F
+impl<T, P> ProjectNode<T> for P
 where
     T: Table,
-    F: project::ProjectFrom<Table = T> + Typed<T::DB> + project::ProjectAndProbe<T::DB>,
+    P: project::ProjectFrom<Table = T> + Typed<T::DB> + project::ProjectAndProbe<T::DB>,
 {
-    type Output = <F::Ty as ty::Type>::Output;
+    type Output = <P::Ty as ty::Type>::Output;
 
     async fn project_node(self, node: &Node<T>) -> UrmResult<Self::Output> {
         match &node.phase {
@@ -245,13 +244,13 @@ where
 }
 
 #[async_trait]
-impl<T, F0, F1> ProjectNode<T> for (F0, F1)
+impl<T, P0, P1> ProjectNode<T> for (P0, P1)
 where
     T: Table,
-    F0: project::ProjectFrom<Table = T> + Typed<T::DB> + project::ProjectAndProbe<T::DB>,
-    F1: project::ProjectFrom<Table = T> + Typed<T::DB> + project::ProjectAndProbe<T::DB>,
+    P0: project::ProjectFrom<Table = T> + Typed<T::DB> + project::ProjectAndProbe<T::DB>,
+    P1: project::ProjectFrom<Table = T> + Typed<T::DB> + project::ProjectAndProbe<T::DB>,
 {
-    type Output = (<F0::Ty as ty::Type>::Output, <F1::Ty as ty::Type>::Output);
+    type Output = (<P0::Ty as ty::Type>::Output, <P1::Ty as ty::Type>::Output);
 
     async fn project_node(self, node: &Node<T>) -> UrmResult<Self::Output> {
         match &node.phase {

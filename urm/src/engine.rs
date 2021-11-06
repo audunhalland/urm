@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::fmt::Write;
 use std::sync::Arc;
 
-use crate::build::{BuildPredicate, Ctx};
+use crate::build::BuildPredicate;
 use crate::builder;
 use crate::builder::QueryBuilder;
 use crate::expr;
@@ -60,7 +60,7 @@ impl<DB: Database> QueryEngine<DB> {
     }
 
     pub fn build_query(&self, builder: &mut QueryBuilder<DB>) {
-        self.root_select.build_query(builder, None);
+        self.root_select.build_query(builder);
     }
 }
 
@@ -107,11 +107,7 @@ pub struct Select<DB: Database> {
 }
 
 impl<DB: Database> Select<DB> {
-    fn build_query(
-        &self,
-        builder: &mut builder::QueryBuilder<DB>,
-        parent_table: Option<&'static dyn Table<DB = DB>>,
-    ) {
+    fn build_query(&self, builder: &mut builder::QueryBuilder<DB>) {
         builder.push("SELECT");
         builder.newline_indent();
 
@@ -130,7 +126,7 @@ impl<DB: Database> Select<DB> {
                     } => {
                         builder.push("(");
                         builder.newline_indent();
-                        select.build_query(builder, Some(self.from.table));
+                        select.build_query(&mut builder.push_table(select.from.table));
                         builder.newline_outdent();
                         builder.push(")");
                     }
@@ -156,13 +152,7 @@ impl<DB: Database> Select<DB> {
             builder.newline();
             builder.push("WHERE");
             builder.newline_indent();
-
-            let ctx = Ctx {
-                table: self.from.table,
-                parent_table,
-            };
-
-            predicate.build_predicate(builder, &ctx);
+            predicate.build_predicate(builder);
             builder.newline_outdent();
         }
     }

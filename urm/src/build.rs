@@ -1,17 +1,12 @@
 use crate::builder::QueryBuilder;
 use crate::{Database, Table};
 
-pub struct Ctx<DB: Database> {
-    pub table: &'static dyn Table<DB = DB>,
-    pub parent_table: Option<&'static dyn Table<DB = DB>>,
-}
-
 pub trait BuildPredicate<DB: Database>: std::fmt::Debug + Send + Sync + 'static {
-    fn build_predicate(&self, builder: &mut QueryBuilder<DB>, ctx: &Ctx<DB>);
+    fn build_predicate(&self, builder: &mut QueryBuilder<DB>);
 }
 
 pub trait BuildPredicate2<DB: Database>: std::fmt::Debug + Send + Sync + 'static {
-    fn build_predicate(&self, builder: &mut QueryBuilder<DB>, ctx: &Ctx<DB>);
+    fn build_predicate(&self, builder: &mut QueryBuilder<DB>);
 }
 
 pub trait BuildRange<DB: Database>: std::fmt::Debug + Send + Sync + 'static {
@@ -19,7 +14,7 @@ pub trait BuildRange<DB: Database>: std::fmt::Debug + Send + Sync + 'static {
 }
 
 impl<DB: Database> BuildPredicate<DB> for () {
-    fn build_predicate(&self, _builder: &mut QueryBuilder<DB>, ctx: &Ctx<DB>) {}
+    fn build_predicate(&self, _builder: &mut QueryBuilder<DB>) {}
 }
 
 impl<DB: Database> BuildRange<DB> for () {
