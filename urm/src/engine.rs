@@ -3,11 +3,12 @@ use std::collections::BTreeMap;
 use std::fmt::Write;
 use std::sync::Arc;
 
-use crate::build::BuildPredicate;
+use crate::build::Build;
 use crate::builder;
 use crate::builder::QueryBuilder;
 use crate::expr;
 use crate::project;
+use crate::ty::Erased;
 use crate::{Database, Table};
 
 #[derive(Clone)]
@@ -47,7 +48,7 @@ impl<DB: Database> QueryEngine<DB> {
     pub fn new_select(
         &self,
         from: &'static dyn Table<DB = DB>,
-        predicate: Option<Box<dyn BuildPredicate<DB>>>,
+        predicate: Option<Box<dyn Build<DB, Ty = Erased>>>,
     ) -> Arc<Select<DB>> {
         Arc::new(Select {
             from: expr::TableAlias {
@@ -102,8 +103,7 @@ pub struct Select<DB: Database> {
     /// not likely.
     pub projection: Mutex<BTreeMap<project::LocalId, QueryField<DB>>>,
 
-    /// Where clause
-    pub predicate: Option<Box<dyn BuildPredicate<DB>>>,
+    pub predicate: Option<Box<dyn Build<DB, Ty = Erased>>>,
 }
 
 impl<DB: Database> Select<DB> {
@@ -122,7 +122,7 @@ impl<DB: Database> Select<DB> {
                     QueryField::Primitive => builder.push("PRIMITIVE,"),
                     QueryField::Foreign {
                         select,
-                        join_predicate,
+                        // join_predicate,
                     } => {
                         builder.push("(");
                         builder.newline_indent();
@@ -152,7 +152,7 @@ impl<DB: Database> Select<DB> {
             builder.newline();
             builder.push("WHERE");
             builder.newline_indent();
-            predicate.build_predicate(builder);
+            predicate.build(builder);
             builder.newline_outdent();
         }
     }
@@ -171,6 +171,6 @@ pub enum QueryField<DB: Database> {
     Primitive,
     Foreign {
         select: Arc<Select<DB>>,
-        join_predicate: Box<dyn BuildPredicate<DB>>,
+        // join_predicate: Box<dyn BuildPredicate<DB>>,
     },
 }

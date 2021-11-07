@@ -1,32 +1,16 @@
-use crate::build::{BuildPredicate, BuildRange};
-use crate::builder::QueryBuilder;
-use crate::expr::Expr;
+use crate::build::{Build, BuildRange};
+use crate::ty::Erased;
 use crate::Database;
 
 pub trait Predicate {}
 
-pub struct Predicates<W, R> {
-    pub filter: W,
+pub struct Predicates<DB: Database, R> {
+    pub filter: Option<Box<dyn Build<DB, Ty = Erased>>>,
     pub range: R,
 }
 
 pub trait IntoPredicates<DB: Database> {
-    type Filter: BuildPredicate<DB>;
     type Range: BuildRange<DB>;
 
-    fn into_predicates(self) -> Predicates<Self::Filter, Self::Range>;
+    fn into_predicates(self) -> Predicates<DB, Self::Range>;
 }
-
-#[derive(Debug)]
-pub struct Eq<DB: Database>(pub Expr<DB>, pub Expr<DB>);
-
-impl<DB: Database> BuildPredicate<DB> for Eq<DB> {
-    fn build_predicate(&self, builder: &mut QueryBuilder<DB>) {
-        self.0.build_expr(builder);
-        builder.push(" = ");
-        self.1.build_expr(builder);
-    }
-}
-
-#[derive(Debug)]
-pub struct And<DB: Database>(pub Vec<Box<dyn BuildPredicate<DB>>>);

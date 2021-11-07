@@ -2,14 +2,14 @@
 //! Foreign projection.
 //!
 
-use crate::build::{BuildPredicate, BuildRange};
+use crate::build::{Build, BuildRange, IntoErasedBuild};
 use crate::engine::{Probing, QueryField};
 use crate::filter;
 use crate::predicate::{IntoPredicates, Predicates};
 use crate::project::{LocalId, ProjectAndProbe, ProjectFrom};
 use crate::quantify;
 use crate::quantify::Quantify;
-use crate::ty::{MapTo, Type, Typed};
+use crate::ty::{MapTo, ScalarTyped, Type, Typed};
 use crate::{Database, Instance, Node, Probe, Table, UrmResult};
 
 pub trait ProjectForeign:
@@ -55,12 +55,12 @@ pub struct Foreign<T1, T2, Ty, W, R> {
     range: R,
 }
 
-pub fn foreign<T1, T2, Ty, W>(filter: W) -> Foreign<T1, T2, Ty, W, ()>
+pub fn foreign2<T1, T2, Ty, W>(filter: W) -> Foreign<T1, T2, Ty, W, ()>
 where
     T1: Table,
     T2: Table,
     Ty: Type,
-    W: BuildPredicate<T1::DB>,
+    W: Build<T1::DB> + ScalarTyped<T1::DB, bool>,
 {
     Foreign {
         source_table: std::marker::PhantomData,
@@ -77,8 +77,8 @@ where
     T1: Table,
     T2: Table + Instance,
     Ty: Type,
-    W: BuildPredicate<T2::DB>,
-    W2: BuildPredicate<T2::DB>,
+    W: Build<T2::DB>,
+    W2: Build<T2::DB> + ScalarTyped<T2::DB, bool>,
     R: BuildRange<T2::DB>,
 {
     type Output = Foreign<T1, T2, Ty, W2, R>;
@@ -100,7 +100,6 @@ where
     T1: Table,
     T2: Table + Instance,
     Ty: Type,
-    W: BuildPredicate<T1::DB>,
     R: BuildRange<T2::DB>,
     R2: BuildRange<T2::DB>,
 {
@@ -123,7 +122,7 @@ where
     T1: Table,
     T2: Table,
     Ty: Type,
-    W: BuildPredicate<T1::DB>,
+    W: Build<T1::DB>,
     R: BuildRange<T2::DB>,
 {
     type Ty = Ty;
@@ -134,7 +133,7 @@ where
     T1: Table,
     T2: Table,
     Ty: Type,
-    W: BuildPredicate<T1::DB>,
+    W: Build<T1::DB> + ScalarTyped<T1::DB, bool>,
     R: BuildRange<T2::DB>,
 {
     type Table = T1;
@@ -145,15 +144,14 @@ where
     T1: Table,
     T2: Table<DB = T1::DB>,
     Ty: Type,
-    W: BuildPredicate<T1::DB>,
+    W: Build<T1::DB> + ScalarTyped<T1::DB, bool>,
     R: BuildRange<T2::DB>,
 {
-    type Filter = W;
     type Range = R;
 
-    fn into_predicates(self) -> Predicates<Self::Filter, Self::Range> {
+    fn into_predicates(self) -> Predicates<T2::DB, Self::Range> {
         Predicates {
-            filter: self.filter,
+            filter: Some(self.filter.into_erased_build()),
             range: self.range,
         }
     }
@@ -164,7 +162,7 @@ where
     T1: Table,
     T2: Table<DB = T1::DB> + Instance,
     Ty: Type,
-    W: BuildPredicate<T1::DB>,
+    W: Build<T1::DB> + ScalarTyped<T1::DB, bool>,
     R: BuildRange<T2::DB>,
 {
     type ForeignTable = T2;
@@ -324,7 +322,7 @@ pub mod probe_async_graphql {
                 .engine()
                 .query
                 .lock()
-                .new_select(foreign_table, Some(Box::new(filter)));
+                .new_select(foreign_table, filter);
 
             {
                 let mut proj_lock = probing.select().projection.lock();
@@ -336,8 +334,6 @@ pub mod probe_async_graphql {
                     LocalId(0),
                     QueryField::Foreign {
                         select: sub_select.clone(),
-                        // TODO: remove, not used:
-                        join_predicate: Box::new(()),
                     },
                 );
             }

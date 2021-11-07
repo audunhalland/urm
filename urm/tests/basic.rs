@@ -31,9 +31,10 @@ pub mod db {
     #[urm::table("contribution")]
     impl Contribution {
         fn id(self) -> String;
+        fn contributor_id(self) -> String;
 
         // LOL
-        fn contributor_id(self) -> Option<String>;
+        // fn contributor_id(self) -> Option<String>;
 
         #[foreign(Self(contributor_id) => Contributor(id))]
         fn contributor(self) -> Contributor;

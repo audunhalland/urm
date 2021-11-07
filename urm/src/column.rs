@@ -2,6 +2,8 @@
 //! Primitive projection of columns/fields.
 //!
 
+use crate::build::Build;
+use crate::builder::QueryBuilder;
 use crate::engine::{Probing, QueryField};
 use crate::project::{LocalId, ProjectAndProbe, ProjectFrom};
 use crate::ty::{Type, Typed};
@@ -39,6 +41,18 @@ where
     Ty: Type,
 {
     type Ty = Ty;
+}
+
+impl<T, Ty> Build<T::DB> for Column<T, Ty>
+where
+    T: Table,
+    Ty: Type,
+{
+    fn build(&self, builder: &mut QueryBuilder<T::DB>) {
+        builder.push(builder.table.name());
+        builder.push(".");
+        builder.push(self.name);
+    }
 }
 
 impl<T, Ty> ProjectFrom for Column<T, Ty>

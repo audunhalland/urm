@@ -13,9 +13,22 @@ pub trait Type: Sized + Send + Sync + 'static {
     type Output: Send + Sync + 'static;
 }
 
+/// Trait implemented for types that are scalar (i.e. not a vector/collection)
+pub trait ScalarType: Type {}
+
 /// Any Rust type that should be interpreted as having an urm `Type`
 pub trait Typed<DB: Database> {
     type Ty: Type;
+}
+
+pub trait ScalarTyped<DB, S> {}
+
+impl<T, DB, S> ScalarTyped<DB, S> for T
+where
+    DB: Database,
+    T: Typed<DB>,
+    T::Ty: ScalarType<Unit = S>,
+{
 }
 
 /// 'FlatMap' some Type into the type `U`
@@ -35,6 +48,8 @@ where
     type Output = T;
 }
 
+impl<T> ScalarType for Unit<T> where T: Send + Sync + 'static {}
+
 impl<T, U> MapTo<U> for Unit<T>
 where
     T: Send + Sync + 'static,
@@ -53,6 +68,8 @@ where
     type Output = Option<T>;
 }
 
+impl<T> ScalarType for Nullable<T> where T: Send + Sync + 'static {}
+
 impl<T, U> MapTo<U> for Nullable<T>
 where
     T: Send + Sync + 'static,
@@ -60,9 +77,9 @@ where
     type Quantify = quantify::AsOption;
 }
 
-pub struct Bool;
+pub struct Erased;
 
-impl Type for Bool {
-    type Unit = bool;
-    type Output = bool;
+impl Type for Erased {
+    type Unit = ();
+    type Output = ();
 }

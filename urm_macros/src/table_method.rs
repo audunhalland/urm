@@ -187,30 +187,20 @@ pub fn gen_method(
             }
         };
 
-        let gen_table_column = |table_expr: proc_macro2::TokenStream,
-                                table_path: &syn::Path,
-                                field_ident: &syn::Ident| {
+        let gen_table_column = |table_path: &syn::Path, field_ident: &syn::Ident| {
             let span = field_ident.span();
 
             quote_spanned! {span=>
-                urm::expr::Expr::TableColumn(#table_expr.clone(), #table_path.#field_ident().name())
+                #table_path.#field_ident()
             }
         };
 
         let gen_eq_pred = |p: &foreign::ColumnEqPredicate| {
-            let local = gen_table_column(
-                quote! { ::urm::expr::TableExpr::Parent },
-                local_table_path,
-                &p.local_ident,
-            );
-            let foreign = gen_table_column(
-                quote! { ::urm::expr::TableExpr::This },
-                foreign_table_path,
-                &p.foreign_ident,
-            );
+            let local = gen_table_column(local_table_path, &p.local_ident);
+            let foreign = gen_table_column(foreign_table_path, &p.foreign_ident);
 
             quote_spanned! {span=>
-                ::urm::predicate::Eq::<::urm::postgres::Postgres>(#local, #foreign)
+                (::urm::func::Equals::new(), #local, #foreign)
             }
         };
 
@@ -245,10 +235,10 @@ pub fn gen_method(
                 #local_table_path,
                 #foreign_table_path,
                 ::urm::foreign::#outcome<#output_type>,
-                impl ::urm::build::BuildPredicate<::urm::postgres::Postgres>,
+                impl ::urm::build::Build<::urm::postgres::Postgres> + ::urm::ty::ScalarTyped<::urm::postgres::Postgres, bool>,
                 ()
             > {
-                urm::foreign::foreign(#eq_pred)
+                urm::foreign::foreign2(#eq_pred)
             }
         }
     } else {

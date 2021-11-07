@@ -2,8 +2,9 @@
 //! Type mapping through function application
 //!
 
+use crate::build::Build;
 use crate::builder::QueryBuilder;
-use crate::ty::{Bool, Type, Typed};
+use crate::ty::{Type, Typed, Unit};
 use crate::Database;
 
 pub trait Unary<T> {
@@ -18,10 +19,10 @@ where
     type Ty = Op::Output;
 }
 
-pub trait Binary<DB: Database, L, R> {
+pub trait Binary<DB: Database, L, R>: Send + Sync + 'static {
     type Output: Type;
 
-    fn build_query(&self, builder: &mut QueryBuilder<DB>, left: &L, right: &R);
+    fn build(&self, builder: &mut QueryBuilder<DB>, left: &L, right: &R);
 }
 
 impl<DB, Op, L, R> Typed<DB> for (Op, L, R)
@@ -32,21 +33,39 @@ where
     type Ty = Op::Output;
 }
 
-#[derive(Debug)]
-pub struct Equals<DB, L, R>(std::marker::PhantomData<(DB, L, R)>);
-
-impl<DB, L, R> Binary<DB, L, R> for Equals<DB, L, R>
+impl<DB, Op, L, R> Build<DB> for (Op, L, R)
 where
     DB: Database,
-    L: Typed<DB>,
-    R: Typed<DB>,
+    L: Build<DB>,
+    R: Build<DB>,
+    Op: Binary<DB, L, R>,
+{
+    fn build(&self, builder: &mut QueryBuilder<DB>) {
+        self.0.build(builder, &self.1, &self.2)
+    }
+}
+
+#[derive(Debug)]
+pub struct Equals<DB>(std::marker::PhantomData<DB>);
+
+impl<DB> Equals<DB> {
+    pub fn new() -> Self {
+        Self(std::marker::PhantomData)
+    }
+}
+
+impl<DB, L, R> Binary<DB, L, R> for Equals<DB>
+where
+    DB: Database,
+    L: Build<DB>,
+    R: Build<DB>,
     L::Ty: Type<Output = <R::Ty as Type>::Output>,
 {
-    type Output = Bool;
+    type Output = Unit<bool>;
 
-    fn build_query(&self, builder: &mut QueryBuilder<DB>, left: &L, right: &R) {
-        // self.0.build_expr(builder);
+    fn build(&self, builder: &mut QueryBuilder<DB>, left: &L, right: &R) {
+        left.build(builder);
         builder.push(" = ");
-        // self.1.build_expr(builder);
+        right.build(builder);
     }
 }

@@ -23,7 +23,7 @@ impl<'b, DB: Database> QueryBuilder<'b, DB> {
     pub fn push_table(&mut self, table: &'static dyn Table<DB = DB>) -> QueryBuilder<'_, DB> {
         QueryBuilder {
             db: std::marker::PhantomData,
-            indent: 0,
+            indent: self.indent,
             buf: self.buf,
             table,
             parent_table: Some(self.table),
