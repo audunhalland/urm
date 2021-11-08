@@ -1,4 +1,5 @@
-use crate::{Database, Table};
+use crate::database::Database;
+use crate::Table;
 
 pub trait Build<DB: Database>: Send + Sync + 'static {
     fn build(&self, builder: &mut QueryBuilder<DB>);

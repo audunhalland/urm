@@ -1,4 +1,4 @@
-use crate::Database;
+use super::Database;
 
 #[derive(Clone, Debug)]
 pub struct Postgres;

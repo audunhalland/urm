@@ -1,5 +1,5 @@
+use crate::database::Database;
 use crate::lower::{BuildRange, Lowered};
-use crate::Database;
 
 pub trait Predicate {}
 

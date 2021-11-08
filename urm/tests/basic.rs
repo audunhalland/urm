@@ -1,3 +1,4 @@
+use urm::function::Contains;
 use urm::prelude::*;
 
 pub mod db {
@@ -110,7 +111,11 @@ impl Query {
         ctx: &::async_graphql::Context<'_>,
         ids: Option<Vec<String>>,
     ) -> urm::UrmResult<Vec<Edition>> {
-        urm::select().range(0..20).probe_with(Edition, ctx).await
+        urm::select()
+            .range(0..20)
+            .filter(ids.map(|ids| Contains(ids, db::Edition::id())))
+            .probe_with(Edition, ctx)
+            .await
     }
 }
 

@@ -3,11 +3,12 @@
 //!
 
 use crate::builder::{Build, QueryBuilder};
+use crate::database::Database;
 use crate::engine::{Probing, QueryField};
 use crate::lower::{Lower, Lowered};
 use crate::project::{LocalId, ProjectAndProbe, ProjectFrom};
 use crate::ty::{Type, Typed};
-use crate::{Database, Instance, Table, UrmResult};
+use crate::{Instance, Table, UrmResult};
 
 pub struct Column<T, Ty> {
     name: &'static str,

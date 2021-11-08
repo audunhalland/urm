@@ -1,5 +1,5 @@
+use crate::database::Database;
 use crate::quantify;
-use crate::Database;
 
 /// Represents the output type/result of a projection.
 /// Because the result of a projection may be a unit type
@@ -102,4 +102,12 @@ where
     T: Send + Sync + 'static,
 {
     type Ty = Self;
+}
+
+impl<DB, T> Typed<DB> for Option<T>
+where
+    DB: Database,
+    T: Typed<DB>,
+{
+    type Ty = Nullable<<T::Ty as Type>::Unit>;
 }

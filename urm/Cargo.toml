@@ -7,6 +7,7 @@ edition = "2018"
 
 [dependencies]
 urm_macros = { path = "../urm_macros", version = "0.1.0" }
+sqlx = { version = "0.5", features = ["runtime-tokio-native-tls", "uuid"] }
 async-graphql = { version = "2", optional = true }
 async-trait = "0.1"
 parking_lot = "0.11"
@@ -15,8 +16,9 @@ futures-util = "0.3"
 noop-waker = "0.1"
 
 [features]
-default = ["async_graphql"]
+default = ["async_graphql", "postgres"]
 async_graphql = ["async-graphql"]
+postgres = ["sqlx/postgres"]
 
 [dev-dependencies]
 trybuild = "1"

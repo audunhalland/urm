@@ -2,6 +2,7 @@
 //! Foreign projection.
 //!
 
+use crate::database::Database;
 use crate::engine::{Probing, QueryField};
 use crate::filter;
 use crate::logic::And;
@@ -11,7 +12,7 @@ use crate::project::{LocalId, ProjectAndProbe, ProjectFrom};
 use crate::quantify;
 use crate::quantify::Quantify;
 use crate::ty::{MapTo, ScalarTyped, Type, Typed};
-use crate::{Database, Instance, Node, Probe, Table, UrmResult};
+use crate::{Instance, Node, Probe, Table, UrmResult};
 
 pub trait ProjectForeign:
     ProjectFrom

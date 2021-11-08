@@ -18,13 +18,13 @@ pub use urm_macros::*;
 
 pub mod builder;
 pub mod column;
+pub mod database;
 pub mod expr;
 pub mod filter;
 pub mod foreign;
 pub mod function;
 pub mod logic;
 pub mod lower;
-pub mod postgres;
 pub mod predicate;
 pub mod prelude;
 pub mod probe;
@@ -39,10 +39,8 @@ mod never;
 use lower::LowerWhere;
 use ty::Typed;
 
-pub trait Database: std::fmt::Debug + Sync + Send + Clone + 'static {}
-
 pub trait Table: Send + Sync + 'static {
-    type DB: Database;
+    type DB: database::Database;
 
     fn name(&self) -> &'static str;
 }
@@ -205,7 +203,7 @@ impl<T: Table> Node<T> {
     }
 }
 
-enum Phase<DB: Database> {
+enum Phase<DB: database::Database> {
     Probe(engine::Probing<DB>),
     Deserialize,
 }

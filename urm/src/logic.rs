@@ -1,7 +1,7 @@
+use crate::database::Database;
 use crate::lower::{Lower, Lowered};
 use crate::ty::Typed;
 use crate::ty::{Nullable, ScalarTyped};
-use crate::Database;
 
 enum LogicOp {
     And,

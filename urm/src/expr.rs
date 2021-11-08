@@ -1,4 +1,4 @@
-use crate::Database;
+use crate::database::Database;
 
 #[derive(Clone)]
 pub struct TableAlias<DB: Database> {

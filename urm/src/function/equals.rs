@@ -1,11 +1,7 @@
-//!
-//! Type mapping through function application
-//!
-
 use crate::builder::{Build, QueryBuilder};
+use crate::database::Database;
 use crate::lower::{Lower, Lowered};
 use crate::ty::{Nullable, Type, Typed};
-use crate::Database;
 
 /// Binary function that tests equality between two given operands
 pub struct Equals<L, R>(pub L, pub R);

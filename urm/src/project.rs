@@ -2,8 +2,9 @@
 //! Things related to data projection, the shape of returned data.
 //!
 
+use crate::database::Database;
 use crate::engine::Probing;
-use crate::{Database, Table, UrmResult};
+use crate::{Table, UrmResult};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct LocalId(pub u16);

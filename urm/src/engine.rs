@@ -5,10 +5,11 @@ use std::sync::Arc;
 
 use crate::builder;
 use crate::builder::{Build, QueryBuilder};
+use crate::database::Database;
 use crate::expr;
 use crate::lower::Lowered;
 use crate::project;
-use crate::{Database, Table};
+use crate::Table;
 
 #[derive(Clone)]
 pub struct Engine<DB: Database> {

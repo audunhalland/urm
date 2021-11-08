@@ -1,9 +1,22 @@
 use crate::builder::{Build, QueryBuilder};
+use crate::database::Database;
 use crate::ty::{ScalarTyped, Typed, Void};
-use crate::Database;
 
 pub trait Lower<DB: Database>: Typed<DB> + Send + Sync + 'static {
     fn lower(self) -> Option<Lowered<DB>>;
+}
+
+impl<DB, T> Lower<DB> for Option<T>
+where
+    DB: Database,
+    T: Lower<DB> + Typed<DB>,
+{
+    fn lower(self) -> Option<Lowered<DB>> {
+        match self {
+            Some(t) => t.lower(),
+            None => None,
+        }
+    }
 }
 
 pub enum Lowered<DB> {

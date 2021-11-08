@@ -1,5 +1,5 @@
+use crate::database::Database;
 use crate::lower::{BuildRange, Lower};
-use crate::Database;
 
 pub trait Filter<DB: Database, P: Lower<DB>> {
     type Output;
