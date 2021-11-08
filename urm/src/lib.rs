@@ -21,7 +21,7 @@ pub mod column;
 pub mod expr;
 pub mod filter;
 pub mod foreign;
-pub mod func;
+pub mod function;
 pub mod logic;
 pub mod lower;
 pub mod postgres;
