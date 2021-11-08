@@ -2,9 +2,11 @@
 //! Foreign projection.
 //!
 
-use crate::build::{Build, BuildRange, IntoErasedBuild};
+use crate::builder::Build;
 use crate::engine::{Probing, QueryField};
 use crate::filter;
+use crate::logic::And;
+use crate::lower::{BuildRange, Lower, LowerWhere};
 use crate::predicate::{IntoPredicates, Predicates};
 use crate::project::{LocalId, ProjectAndProbe, ProjectFrom};
 use crate::quantify;
@@ -55,12 +57,12 @@ pub struct Foreign<T1, T2, Ty, W, R> {
     range: R,
 }
 
-pub fn foreign2<T1, T2, Ty, W>(filter: W) -> Foreign<T1, T2, Ty, W, ()>
+pub fn foreign<T1, T2, Ty, W>(filter: W) -> Foreign<T1, T2, Ty, W, ()>
 where
     T1: Table,
     T2: Table,
     Ty: Type,
-    W: Build<T1::DB> + ScalarTyped<T1::DB, bool>,
+    W: Lower<T1::DB> + ScalarTyped<T1::DB, bool>,
 {
     Foreign {
         source_table: std::marker::PhantomData,
@@ -77,18 +79,18 @@ where
     T1: Table,
     T2: Table + Instance,
     Ty: Type,
-    W: Build<T2::DB>,
-    W2: Build<T2::DB> + ScalarTyped<T2::DB, bool>,
+    W: Lower<T2::DB>,
+    W2: Lower<T2::DB> + ScalarTyped<T2::DB, bool>,
     R: BuildRange<T2::DB>,
 {
-    type Output = Foreign<T1, T2, Ty, W2, R>;
+    type Output = Foreign<T1, T2, Ty, (And, W, W2), R>;
 
     fn filter(self, filter: W2) -> Self::Output {
         Self::Output {
             source_table: std::marker::PhantomData,
             foreign_table: std::marker::PhantomData,
             ty: std::marker::PhantomData,
-            filter, // TODO: And operator
+            filter: (And, self.filter, filter),
             range: self.range,
         }
     }
@@ -122,7 +124,7 @@ where
     T1: Table,
     T2: Table,
     Ty: Type,
-    W: Build<T1::DB>,
+    W: Lower<T1::DB>,
     R: BuildRange<T2::DB>,
 {
     type Ty = Ty;
@@ -133,7 +135,7 @@ where
     T1: Table,
     T2: Table,
     Ty: Type,
-    W: Build<T1::DB> + ScalarTyped<T1::DB, bool>,
+    W: Lower<T1::DB> + ScalarTyped<T1::DB, bool>,
     R: BuildRange<T2::DB>,
 {
     type Table = T1;
@@ -144,14 +146,14 @@ where
     T1: Table,
     T2: Table<DB = T1::DB>,
     Ty: Type,
-    W: Build<T1::DB> + ScalarTyped<T1::DB, bool>,
+    W: Lower<T1::DB> + ScalarTyped<T1::DB, bool>,
     R: BuildRange<T2::DB>,
 {
     type Range = R;
 
     fn into_predicates(self) -> Predicates<T2::DB, Self::Range> {
         Predicates {
-            filter: Some(self.filter.into_erased_build()),
+            filter: self.filter.lower_where(),
             range: self.range,
         }
     }
@@ -162,7 +164,7 @@ where
     T1: Table,
     T2: Table<DB = T1::DB> + Instance,
     Ty: Type,
-    W: Build<T1::DB> + ScalarTyped<T1::DB, bool>,
+    W: Lower<T1::DB> + ScalarTyped<T1::DB, bool>,
     R: BuildRange<T2::DB>,
 {
     type ForeignTable = T2;

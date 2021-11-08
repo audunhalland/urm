@@ -1,5 +1,9 @@
 use crate::{Database, Table};
 
+pub trait Build<DB: Database>: Send + Sync + 'static {
+    fn build(&self, builder: &mut QueryBuilder<DB>);
+}
+
 pub struct QueryBuilder<'b, DB: Database> {
     db: std::marker::PhantomData<DB>,
     indent: u16,

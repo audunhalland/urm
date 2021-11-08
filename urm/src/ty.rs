@@ -77,9 +77,29 @@ where
     type Quantify = quantify::AsOption;
 }
 
-pub struct Erased;
+/// Type that always resolves to 'no value', i.e. Option::None
+pub struct Void<T>(std::marker::PhantomData<T>);
 
-impl Type for Erased {
-    type Unit = ();
-    type Output = ();
+impl<T> Void<T> {
+    pub fn new() -> Self {
+        Self(std::marker::PhantomData)
+    }
+}
+
+impl<T> Type for Void<T>
+where
+    T: Send + Sync + 'static,
+{
+    type Unit = T;
+    type Output = Option<T>;
+}
+
+impl<T> ScalarType for Void<T> where T: Send + Sync + 'static {}
+
+impl<DB, T> Typed<DB> for Void<T>
+where
+    DB: Database,
+    T: Send + Sync + 'static,
+{
+    type Ty = Self;
 }

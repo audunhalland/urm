@@ -235,10 +235,10 @@ pub fn gen_method(
                 #local_table_path,
                 #foreign_table_path,
                 ::urm::foreign::#outcome<#output_type>,
-                impl ::urm::build::Build<::urm::postgres::Postgres> + ::urm::ty::ScalarTyped<::urm::postgres::Postgres, bool>,
+                impl ::urm::lower::Lower<::urm::postgres::Postgres> + ::urm::ty::ScalarTyped<::urm::postgres::Postgres, bool>,
                 ()
             > {
-                urm::foreign::foreign2(#eq_pred)
+                urm::foreign::foreign(#eq_pred)
             }
         }
     } else {

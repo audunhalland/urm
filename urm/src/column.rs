@@ -2,12 +2,12 @@
 //! Primitive projection of columns/fields.
 //!
 
-use crate::build::Build;
-use crate::builder::QueryBuilder;
+use crate::builder::{Build, QueryBuilder};
 use crate::engine::{Probing, QueryField};
+use crate::lower::Lower;
 use crate::project::{LocalId, ProjectAndProbe, ProjectFrom};
 use crate::ty::{Type, Typed};
-use crate::{Database, Table, UrmResult};
+use crate::{Database, Instance, Table, UrmResult};
 
 pub struct Column<T, Ty> {
     name: &'static str,
@@ -43,13 +43,25 @@ where
     type Ty = Ty;
 }
 
+impl<T, Ty> Lower<T::DB> for Column<T, Ty>
+where
+    T: Table + Instance,
+    Ty: Type,
+{
+    type Target = Self;
+
+    fn lower(self) -> Option<Self> {
+        Some(self)
+    }
+}
+
 impl<T, Ty> Build<T::DB> for Column<T, Ty>
 where
-    T: Table,
+    T: Table + Instance,
     Ty: Type,
 {
     fn build(&self, builder: &mut QueryBuilder<T::DB>) {
-        builder.push(builder.table.name());
+        builder.push(T::instance().name());
         builder.push(".");
         builder.push(self.name);
     }

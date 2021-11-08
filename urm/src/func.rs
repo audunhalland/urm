@@ -2,8 +2,8 @@
 //! Type mapping through function application
 //!
 
-use crate::build::Build;
-use crate::builder::QueryBuilder;
+use crate::builder::{Build, QueryBuilder};
+use crate::lower::Lower;
 use crate::ty::{Nullable, Type, Typed};
 use crate::Database;
 
@@ -20,6 +20,19 @@ where
     Op: Unary<DB, T>,
 {
     type Ty = Op::Output;
+}
+
+impl<DB, Op, T> Lower<DB> for (Op, T)
+where
+    DB: Database,
+    Op: Unary<DB, T>,
+    T: Lower<DB> + Build<DB>,
+{
+    type Target = Self;
+
+    fn lower(self) -> Option<Self> {
+        Some(self)
+    }
 }
 
 impl<DB, Op, T> Build<DB> for (Op, T)
@@ -48,6 +61,20 @@ where
     type Ty = Op::Output;
 }
 
+impl<DB, Op, L, R> Lower<DB> for (Op, L, R)
+where
+    DB: Database,
+    Op: Binary<DB, L, R>,
+    L: Lower<DB> + Build<DB>,
+    R: Lower<DB> + Build<DB>,
+{
+    type Target = Self;
+
+    fn lower(self) -> Option<Self> {
+        Some(self)
+    }
+}
+
 impl<DB, Op, L, R> Build<DB> for (Op, L, R)
 where
     DB: Database,
@@ -56,7 +83,7 @@ where
     R: Build<DB>,
 {
     fn build(&self, builder: &mut QueryBuilder<DB>) {
-        self.0.build(builder, &self.1, &self.2)
+        self.0.build(builder, &self.1, &self.2);
     }
 }
 
@@ -67,8 +94,8 @@ pub struct Equals;
 impl<DB, L, R> Binary<DB, L, R> for Equals
 where
     DB: Database,
-    L: Build<DB>,
-    R: Build<DB>,
+    L: Lower<DB> + Build<DB>,
+    R: Lower<DB> + Build<DB>,
     L::Ty: Type<Output = <R::Ty as Type>::Output>,
 {
     type Output = Nullable<bool>;

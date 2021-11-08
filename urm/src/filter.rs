@@ -1,7 +1,7 @@
-use crate::build::{Build, BuildRange};
+use crate::lower::{BuildRange, Lower};
 use crate::Database;
 
-pub trait Filter<DB: Database, P: Build<DB>> {
+pub trait Filter<DB: Database, P: Lower<DB>> {
     type Output;
 
     fn filter(self, p: P) -> Self::Output;

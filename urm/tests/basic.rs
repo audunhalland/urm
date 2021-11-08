@@ -87,6 +87,10 @@ impl Publication {
 
 #[async_graphql::Object]
 impl Edition {
+    pub async fn id(&self) -> urm::UrmResult<String> {
+        urm::project(self, db::Edition.id()).await
+    }
+
     pub async fn publication(
         &self,
         ctx: &::async_graphql::Context<'_>,
@@ -104,6 +108,7 @@ impl Query {
     pub async fn editions(
         &self,
         ctx: &::async_graphql::Context<'_>,
+        ids: Option<Vec<String>>,
     ) -> urm::UrmResult<Vec<Edition>> {
         urm::select().range(0..20).probe_with(Edition, ctx).await
     }
@@ -127,6 +132,9 @@ mod tests {
                     editions {
                         publication {
                             id
+                            editions {
+                                id
+                            }
                         }
                     }
                 }"#,

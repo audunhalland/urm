@@ -16,13 +16,14 @@ use async_trait::*;
 
 pub use urm_macros::*;
 
-pub mod build;
 pub mod builder;
 pub mod column;
 pub mod expr;
 pub mod filter;
 pub mod foreign;
 pub mod func;
+pub mod logic;
+pub mod lower;
 pub mod postgres;
 pub mod predicate;
 pub mod prelude;
@@ -35,6 +36,7 @@ mod engine;
 mod experiment;
 mod never;
 
+use lower::LowerWhere;
 use ty::Typed;
 
 pub trait Database: std::fmt::Debug + Sync + Send + Clone + 'static {}
@@ -50,14 +52,25 @@ pub trait Instance {
     fn instance() -> &'static Self;
 }
 
-pub struct Select<T: Table> {
+pub struct Select<T: Table, W> {
     table: std::marker::PhantomData<T>,
+    filter: W,
 }
 
-impl<T> Select<T>
+impl<T, W> Select<T, W>
 where
     T: Table + Instance,
 {
+    pub fn filter<W2>(self, f: W2) -> Select<T, (logic::And, W, W2)>
+    where
+        W2: lower::Lower<T::DB> + ty::ScalarTyped<T::DB, bool>,
+    {
+        Select {
+            table: self.table,
+            filter: (logic::And, self.filter, f),
+        }
+    }
+
     /// Perform probing for the select, thus building a suitable query
     /// to send to the database.
     #[cfg(feature = "async_graphql")]
@@ -69,9 +82,10 @@ where
     where
         F: Fn(Node<T>) -> U,
         U: Probe + async_graphql::ContainerType,
+        W: lower::Lower<T::DB> + ty::ScalarTyped<T::DB, bool>,
     {
         let table = T::instance();
-        let (engine, probing) = engine::Engine::new_select(table);
+        let (engine, probing) = engine::Engine::new_select(table, self.filter.lower_where());
         let node = Node::<T>::new_probe(probing);
 
         let container = func(node);
@@ -99,10 +113,10 @@ where
     }
 }
 
-impl<T, R> filter::Range<T::DB, R> for Select<T>
+impl<T, W, R> filter::Range<T::DB, R> for Select<T, W>
 where
     T: Table,
-    R: build::BuildRange<T::DB>,
+    R: lower::BuildRange<T::DB>,
 {
     type Output = Self;
 
@@ -111,12 +125,13 @@ where
     }
 }
 
-pub fn select<T>() -> Select<T>
+pub fn select<T>() -> Select<T, ty::Void<bool>>
 where
     T: Table,
 {
     Select {
         table: std::marker::PhantomData,
+        filter: ty::Void::new(),
     }
 }
 

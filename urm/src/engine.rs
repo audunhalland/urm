@@ -3,12 +3,10 @@ use std::collections::BTreeMap;
 use std::fmt::Write;
 use std::sync::Arc;
 
-use crate::build::Build;
 use crate::builder;
-use crate::builder::QueryBuilder;
+use crate::builder::{Build, QueryBuilder};
 use crate::expr;
 use crate::project;
-use crate::ty::Erased;
 use crate::{Database, Table};
 
 #[derive(Clone)]
@@ -17,14 +15,17 @@ pub struct Engine<DB: Database> {
 }
 
 impl<DB: Database> Engine<DB> {
-    pub fn new_select(from: &'static dyn Table<DB = DB>) -> (Self, Probing<DB>) {
+    pub fn new_select(
+        from: &'static dyn Table<DB = DB>,
+        filter: Option<Box<dyn Build<DB>>>,
+    ) -> (Self, Probing<DB>) {
         let root_select = Arc::new(Select {
             from: expr::TableAlias {
                 table: from,
                 alias: 0,
             },
             projection: Mutex::new(BTreeMap::new()),
-            predicate: None,
+            filter,
         });
 
         let query_engine = Arc::new(Mutex::new(QueryEngine {
@@ -48,7 +49,7 @@ impl<DB: Database> QueryEngine<DB> {
     pub fn new_select(
         &self,
         from: &'static dyn Table<DB = DB>,
-        predicate: Option<Box<dyn Build<DB, Ty = Erased>>>,
+        filter: Option<Box<dyn Build<DB>>>,
     ) -> Arc<Select<DB>> {
         Arc::new(Select {
             from: expr::TableAlias {
@@ -56,7 +57,7 @@ impl<DB: Database> QueryEngine<DB> {
                 alias: 0,
             },
             projection: Mutex::new(BTreeMap::new()),
-            predicate,
+            filter,
         })
     }
 
@@ -103,7 +104,7 @@ pub struct Select<DB: Database> {
     /// not likely.
     pub projection: Mutex<BTreeMap<project::LocalId, QueryField<DB>>>,
 
-    pub predicate: Option<Box<dyn Build<DB, Ty = Erased>>>,
+    pub filter: Option<Box<dyn Build<DB>>>,
 }
 
 impl<DB: Database> Select<DB> {
@@ -148,11 +149,11 @@ impl<DB: Database> Select<DB> {
         )
         .unwrap();
 
-        if let Some(predicate) = &self.predicate {
+        if let Some(filter) = &self.filter {
             builder.newline();
             builder.push("WHERE");
             builder.newline_indent();
-            predicate.build(builder);
+            filter.build(builder);
             builder.newline_outdent();
         }
     }
