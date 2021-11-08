@@ -45,7 +45,7 @@ pub fn gen_table(table_name: syn::LitStr, impl_table: ImplTable) -> proc_macro2:
 
     quote! {
         impl ::urm::Table for #path {
-            type DB = ::urm::postgres::Postgres;
+            type DB = ::urm::database::Postgres;
 
             fn name(&self) -> &'static str {
                 #table_name

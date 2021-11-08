@@ -31,6 +31,7 @@ pub mod probe;
 pub mod project;
 pub mod quantify;
 pub mod ty;
+pub mod value;
 
 mod engine;
 mod experiment;

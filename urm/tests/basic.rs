@@ -1,5 +1,6 @@
 use urm::function::Contains;
 use urm::prelude::*;
+use urm::value::Vector;
 
 pub mod db {
     pub struct Publication;
@@ -113,7 +114,7 @@ impl Query {
     ) -> urm::UrmResult<Vec<Edition>> {
         urm::select()
             .range(0..20)
-            .filter(ids.map(|ids| Contains(ids, db::Edition::id())))
+            .filter(ids.map(|ids| Contains(Vector(ids), db::Edition.id())))
             .probe_with(Edition, ctx)
             .await
     }
@@ -134,7 +135,7 @@ mod tests {
         let response = schema
             .execute(
                 r#"{
-                    editions {
+                    editions(ids: ["foo"]) {
                         publication {
                             id
                             editions {
