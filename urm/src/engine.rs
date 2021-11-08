@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::builder;
 use crate::builder::{Build, QueryBuilder};
 use crate::expr;
+use crate::lower::Lowered;
 use crate::project;
 use crate::{Database, Table};
 
@@ -17,7 +18,7 @@ pub struct Engine<DB: Database> {
 impl<DB: Database> Engine<DB> {
     pub fn new_select(
         from: &'static dyn Table<DB = DB>,
-        filter: Option<Box<dyn Build<DB>>>,
+        filter: Option<Lowered<DB>>,
     ) -> (Self, Probing<DB>) {
         let root_select = Arc::new(Select {
             from: expr::TableAlias {
@@ -49,7 +50,7 @@ impl<DB: Database> QueryEngine<DB> {
     pub fn new_select(
         &self,
         from: &'static dyn Table<DB = DB>,
-        filter: Option<Box<dyn Build<DB>>>,
+        filter: Option<Lowered<DB>>,
     ) -> Arc<Select<DB>> {
         Arc::new(Select {
             from: expr::TableAlias {
@@ -104,7 +105,7 @@ pub struct Select<DB: Database> {
     /// not likely.
     pub projection: Mutex<BTreeMap<project::LocalId, QueryField<DB>>>,
 
-    pub filter: Option<Box<dyn Build<DB>>>,
+    pub filter: Option<Lowered<DB>>,
 }
 
 impl<DB: Database> Select<DB> {

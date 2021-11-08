@@ -4,7 +4,7 @@
 
 use crate::builder::{Build, QueryBuilder};
 use crate::engine::{Probing, QueryField};
-use crate::lower::Lower;
+use crate::lower::{Lower, Lowered};
 use crate::project::{LocalId, ProjectAndProbe, ProjectFrom};
 use crate::ty::{Type, Typed};
 use crate::{Database, Instance, Table, UrmResult};
@@ -48,10 +48,8 @@ where
     T: Table + Instance,
     Ty: Type,
 {
-    type Target = Self;
-
-    fn lower(self) -> Option<Self> {
-        Some(self)
+    fn lower(self) -> Option<Lowered<T::DB>> {
+        Some(Lowered::Expr(Box::new(self)))
     }
 }
 

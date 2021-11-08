@@ -3,28 +3,67 @@ use crate::ty::{ScalarTyped, Typed, Void};
 use crate::Database;
 
 pub trait Lower<DB: Database>: Typed<DB> + Send + Sync + 'static {
-    type Target: Build<DB>;
-
-    fn lower(self) -> Option<Self::Target>;
+    fn lower(self) -> Option<Lowered<DB>>;
 }
 
-struct BuildLowered<T>(T);
+pub enum Lowered<DB> {
+    And(Vec<Lowered<DB>>),
+    Or(Vec<Lowered<DB>>),
+    Expr(Box<dyn Build<DB>>),
+}
 
-impl<T, DB> Build<DB> for BuildLowered<T>
+impl<DB> Build<DB> for Lowered<DB>
 where
-    T: Build<DB> + Send + Sync + 'static,
     DB: Database,
 {
     fn build(&self, builder: &mut QueryBuilder<DB>) {
-        self.0.build(builder);
+        match self {
+            Self::Expr(expr) => expr.build(builder),
+            Self::And(clauses) => {
+                build_multiline_infix("AND", &clauses, builder);
+            }
+            Self::Or(clauses) => {
+                build_multiline_infix("OR", &clauses, builder);
+            }
+        }
     }
+}
+
+fn build_multiline_infix<DB: Database>(
+    infix: &str,
+    clauses: &[Lowered<DB>],
+    builder: &mut QueryBuilder<DB>,
+) {
+    if clauses.is_empty() {
+        return;
+    }
+
+    builder.push("(");
+    builder.newline_indent();
+
+    let mut iterator = clauses.into_iter();
+    let mut item = iterator.next();
+
+    while let Some(cur) = item {
+        cur.build(builder);
+        let next_item = iterator.next();
+        if let Some(_) = next_item.as_ref() {
+            builder.newline();
+            builder.push(infix);
+            builder.newline();
+        }
+        item = next_item;
+    }
+
+    builder.newline_outdent();
+    builder.push(")");
 }
 
 pub trait LowerWhere<DB>
 where
     DB: Database,
 {
-    fn lower_where(self) -> Option<Box<dyn Build<DB>>>;
+    fn lower_where(self) -> Option<Lowered<DB>>;
 }
 
 impl<T, DB> LowerWhere<DB> for T
@@ -32,11 +71,8 @@ where
     DB: Database,
     T: Lower<DB> + ScalarTyped<DB, bool>,
 {
-    fn lower_where(self) -> Option<Box<dyn Build<DB>>> {
-        match self.lower() {
-            Some(lowered) => Some(Box::new(BuildLowered(lowered))),
-            None => None,
-        }
+    fn lower_where(self) -> Option<Lowered<DB>> {
+        self.lower()
     }
 }
 
@@ -45,9 +81,7 @@ where
     DB: Database,
     T: Send + Sync + 'static,
 {
-    type Target = Self;
-
-    fn lower(self) -> Option<Self> {
+    fn lower(self) -> Option<Lowered<DB>> {
         None
     }
 }

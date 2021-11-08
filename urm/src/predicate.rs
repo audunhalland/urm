@@ -1,11 +1,10 @@
-use crate::builder::Build;
-use crate::lower::BuildRange;
+use crate::lower::{BuildRange, Lowered};
 use crate::Database;
 
 pub trait Predicate {}
 
 pub struct Predicates<DB: Database, R> {
-    pub filter: Option<Box<dyn Build<DB>>>,
+    pub filter: Option<Lowered<DB>>,
     pub range: R,
 }
 

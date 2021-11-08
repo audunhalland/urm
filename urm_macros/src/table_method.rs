@@ -200,7 +200,7 @@ pub fn gen_method(
             let foreign = gen_table_column(foreign_table_path, &p.foreign_ident);
 
             quote_spanned! {span=>
-                (::urm::func::Equals, #local, #foreign)
+                ::urm::func::Equals(#local, #foreign)
             }
         };
 

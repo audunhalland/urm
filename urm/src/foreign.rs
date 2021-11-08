@@ -2,7 +2,6 @@
 //! Foreign projection.
 //!
 
-use crate::builder::Build;
 use crate::engine::{Probing, QueryField};
 use crate::filter;
 use crate::logic::And;
@@ -83,14 +82,14 @@ where
     W2: Lower<T2::DB> + ScalarTyped<T2::DB, bool>,
     R: BuildRange<T2::DB>,
 {
-    type Output = Foreign<T1, T2, Ty, (And, W, W2), R>;
+    type Output = Foreign<T1, T2, Ty, And<W, W2>, R>;
 
     fn filter(self, filter: W2) -> Self::Output {
         Self::Output {
             source_table: std::marker::PhantomData,
             foreign_table: std::marker::PhantomData,
             ty: std::marker::PhantomData,
-            filter: (And, self.filter, filter),
+            filter: And(self.filter, filter),
             range: self.range,
         }
     }
